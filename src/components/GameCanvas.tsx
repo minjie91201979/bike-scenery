@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { RideEngine, type EngineCallbacks } from '../engine/RideEngine';
+import type { RideConfig } from '../engine/scenes';
 
 interface Props extends EngineCallbacks {
   started: boolean;
+  config: RideConfig;
   onReady: (engine: RideEngine | null) => void;
 }
 
@@ -22,7 +24,7 @@ export function GameCanvas(props: Props) {
       onCamChange: (m) => cbRef.current.onCamChange(m),
       onTimeChange: (t) => cbRef.current.onTimeChange(t),
       onToast: (m) => cbRef.current.onToast(m),
-    });
+    }, props.config);
     engineRef.current = engine;
     cbRef.current.onReady(engine);
 
@@ -31,7 +33,7 @@ export function GameCanvas(props: Props) {
       engineRef.current = null;
       engine.dispose();
     };
-  }, []);
+  }, [props.config]);
 
   useEffect(() => {
     engineRef.current?.setStarted(props.started);

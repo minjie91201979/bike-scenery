@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import type { CharacterId } from './scenes';
 
 /* ============================================================
  *  低多边形自行车 + 骑手
@@ -7,17 +8,47 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
  *  模型朝向：+Z 为前进方向，车轮轴沿 X
  * ============================================================ */
 
-const MAT = {
-  frame: new THREE.MeshStandardMaterial({ color: 0x2f9dff, roughness: 0.32, metalness: 0.3, flatShading: true }),
-  frameDark: new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.5, metalness: 0.35, flatShading: true }),
-  tyre: new THREE.MeshStandardMaterial({ color: 0x191c21, roughness: 0.9, flatShading: true }),
-  rim: new THREE.MeshStandardMaterial({ color: 0xc9d4e0, roughness: 0.28, metalness: 0.65, flatShading: true }),
-  skin: new THREE.MeshStandardMaterial({ color: 0xf0c9a4, roughness: 0.8, flatShading: true }),
-  helmet: new THREE.MeshStandardMaterial({ color: 0xff6b5b, roughness: 0.35, flatShading: true }),
-  shirt: new THREE.MeshStandardMaterial({ color: 0xfaf4e6, roughness: 0.85, flatShading: true }),
-  pants: new THREE.MeshStandardMaterial({ color: 0x2b3550, roughness: 0.85, flatShading: true }),
-  shoe: new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.7, flatShading: true }),
+
+type KitMats = {
+  frame: THREE.MeshStandardMaterial;
+  frameDark: THREE.MeshStandardMaterial;
+  tyre: THREE.MeshStandardMaterial;
+  rim: THREE.MeshStandardMaterial;
+  skin: THREE.MeshStandardMaterial;
+  helmet: THREE.MeshStandardMaterial;
+  shirt: THREE.MeshStandardMaterial;
+  pants: THREE.MeshStandardMaterial;
+  shoe: THREE.MeshStandardMaterial;
+  hair: THREE.MeshStandardMaterial;
 };
+
+function makeKit(character: CharacterId): KitMats {
+  const shared = {
+    frameDark: new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.5, metalness: 0.35, flatShading: true }),
+    tyre: new THREE.MeshStandardMaterial({ color: 0x191c21, roughness: 0.9, flatShading: true }),
+    rim: new THREE.MeshStandardMaterial({ color: 0xc9d4e0, roughness: 0.28, metalness: 0.65, flatShading: true }),
+    skin: new THREE.MeshStandardMaterial({ color: 0xf0c9a4, roughness: 0.8, flatShading: true }),
+    shoe: new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.7, flatShading: true }),
+  };
+  if (character === 'female') {
+    return {
+      ...shared,
+      frame: new THREE.MeshStandardMaterial({ color: 0xc45dff, roughness: 0.32, metalness: 0.3, flatShading: true }),
+      helmet: new THREE.MeshStandardMaterial({ color: 0xff4fa3, roughness: 0.35, flatShading: true }),
+      shirt: new THREE.MeshStandardMaterial({ color: 0xe8d4ff, roughness: 0.85, flatShading: true }),
+      pants: new THREE.MeshStandardMaterial({ color: 0x5a2d6e, roughness: 0.85, flatShading: true }),
+      hair: new THREE.MeshStandardMaterial({ color: 0x2a1a14, roughness: 0.75, flatShading: true }),
+    };
+  }
+  return {
+    ...shared,
+    frame: new THREE.MeshStandardMaterial({ color: 0x2f9dff, roughness: 0.32, metalness: 0.3, flatShading: true }),
+    helmet: new THREE.MeshStandardMaterial({ color: 0xff6b5b, roughness: 0.35, flatShading: true }),
+    shirt: new THREE.MeshStandardMaterial({ color: 0xfaf4e6, roughness: 0.85, flatShading: true }),
+    pants: new THREE.MeshStandardMaterial({ color: 0x2b3550, roughness: 0.85, flatShading: true }),
+    hair: new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.8, flatShading: true }),
+  };
+}
 
 const rbox = (w: number, h: number, d: number, r = 0.02): RoundedBoxGeometry =>
   new RoundedBoxGeometry(w, h, d, 1, Math.min(r, Math.min(w, h, d) * 0.45));
@@ -56,6 +87,7 @@ const TORSO_TILT = 0.70;   // 躯干前倾角（正角 = 顶部向 +Z）
 export class Bike {
   root = new THREE.Group();
   wheelRadius = 0.345;
+  readonly character: CharacterId;
   private crankAngle = 0;
   private wheels: THREE.Group[] = [];
   private handlebar!: THREE.Group;
@@ -67,11 +99,20 @@ export class Bike {
   private light!: THREE.SpotLight;
   private bb = { x: 0, y: 0.30, z: 0.04 };
 
-  constructor() {
-    this.build();
+  constructor(character: CharacterId = 'male') {
+    this.character = character;
+    this.build(character);
   }
 
-  private build(): void {
+  private build(character: CharacterId): void {
+    const MAT = makeKit(character);
+    const female = character === 'female';
+    const shoulderW = female ? 0.28 : 0.34;
+    const torsoD = female ? 0.22 : 0.25;
+    const hipSpread = female ? 0.09 : 0.10;
+    const armOut = female ? 0.20 : 0.24;
+    const riderScale = female ? 0.95 : 1;
+
     const R = this.wheelRadius;
     const WB = 0.52;
     const BB = { x: 0, y: 0.30, z: 0.04 };
@@ -143,48 +184,55 @@ export class Bike {
 
     // ---------- 骑手 ----------
     this.rider = new THREE.Group();
+    this.rider.scale.setScalar(riderScale);
     this.root.add(this.rider);
 
     const hip = new THREE.Vector3(0, 1.0, -0.32);
 
-    // 躯干（前倾）—— 顶端 = hip + (0, cos0.70, sin0.70) * 0.48 ≈ (0, 1.37, 0.01)
+    // 躯干（前倾）
     this.torso = new THREE.Group();
     this.torso.position.copy(hip);
-    this.torso.add(part(rbox(0.34, 0.48, 0.25, 0.095), MAT.shirt, 0, 0.24, 0));
+    this.torso.add(part(rbox(shoulderW, 0.48, torsoD, 0.095), MAT.shirt, 0, 0.24, 0));
     this.torso.rotation.x = TORSO_TILT;
     this.rider.add(this.torso);
 
-    // 肩：躯干顶端；头颈顺势前伸
     const shoulder = new THREE.Vector3(0, 1.36, 0.02);
 
     const head = new THREE.Group();
     head.position.set(shoulder.x, shoulder.y + 0.11, shoulder.z + 0.07);
     head.add(part(rbox(0.09, 0.09, 0.09, 0.04), MAT.skin, 0, -0.10, -0.02));
-    head.add(part(rbox(0.20, 0.21, 0.22, 0.075), MAT.skin, 0, 0.04, 0));
-    head.add(part(rbox(0.225, 0.13, 0.245, 0.07), MAT.helmet, 0, 0.11, 0.005));
+    head.add(part(rbox(female ? 0.18 : 0.20, female ? 0.20 : 0.21, female ? 0.20 : 0.22, 0.075), MAT.skin, 0, 0.04, 0));
+    head.add(part(rbox(female ? 0.21 : 0.225, 0.13, female ? 0.23 : 0.245, 0.07), MAT.helmet, 0, 0.11, 0.005));
     const visor = part(rbox(0.20, 0.035, 0.06, 0.016), MAT.helmet, 0, 0.085, 0.14);
     visor.rotation.x = 0.35;
     head.add(visor);
+    if (female) {
+      // 长发：后脑勺垂下的几段方块
+      head.add(part(rbox(0.16, 0.28, 0.08, 0.035), MAT.hair, 0, -0.02, -0.12));
+      head.add(part(rbox(0.12, 0.36, 0.07, 0.03), MAT.hair, 0, -0.12, -0.14));
+      head.add(part(rbox(0.07, 0.22, 0.06, 0.025), MAT.hair, 0.09, -0.08, -0.10));
+      head.add(part(rbox(0.07, 0.22, 0.06, 0.025), MAT.hair, -0.09, -0.08, -0.10));
+    }
     this.rider.add(head);
 
     // 手臂（肩 → 肘 → 车把）
     for (const s of [-1, 1]) {
-      const ex = s * 0.24, ey = 1.16, ez = 0.27;
+      const ex = s * armOut, ey = 1.16, ez = 0.27;
       this.rider.add(
-        tube(MAT.shirt, s * 0.17, shoulder.y, shoulder.z, ex, ey, ez, 0.085),
-        tube(MAT.skin, ex, ey, ez, s * 0.275, headTop.y + 0.05, headTop.z + 0.14, 0.072)
+        tube(MAT.shirt, s * (shoulderW * 0.5), shoulder.y, shoulder.z, ex, ey, ez, female ? 0.075 : 0.085),
+        tube(MAT.skin, ex, ey, ez, s * 0.275, headTop.y + 0.05, headTop.z + 0.14, female ? 0.065 : 0.072)
       );
     }
 
     // 腿（两骨节 IK）
     for (const s of [-1, 1]) {
       const thigh = new THREE.Group();
-      thigh.position.set(hip.x + s * 0.10, hip.y, hip.z);
-      thigh.add(part(rbox(0.115, THIGH, 0.115, 0.05), MAT.pants, 0, -THIGH / 2, 0));
+      thigh.position.set(hip.x + s * hipSpread, hip.y, hip.z);
+      thigh.add(part(rbox(female ? 0.105 : 0.115, THIGH, female ? 0.105 : 0.115, 0.05), MAT.pants, 0, -THIGH / 2, 0));
 
       const shin = new THREE.Group();
       shin.position.set(0, -THIGH, 0);
-      shin.add(part(rbox(0.095, SHIN, 0.095, 0.045), MAT.pants, 0, -SHIN / 2, 0));
+      shin.add(part(rbox(female ? 0.088 : 0.095, SHIN, female ? 0.088 : 0.095, 0.045), MAT.pants, 0, -SHIN / 2, 0));
       shin.add(part(rbox(0.10, 0.055, 0.24, 0.03), MAT.shoe, 0, -SHIN - 0.01, 0.07));
 
       thigh.add(shin);

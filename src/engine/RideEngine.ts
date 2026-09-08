@@ -1,9 +1,10 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import { World } from './World';
 import { Sky } from './Sky';
 import { Bike } from './Bike';
 import { Scatter, buildPois, type Animatable } from './Props';
-import { POI_DEFS, CRUISE, SPRINT, BRAKE_MIN, MAX_LAT } from './constants';
+import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT } from './constants';
+import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
 
 export interface EngineCallbacks {
@@ -12,6 +13,8 @@ export interface EngineCallbacks {
   onTimeChange: (t: TimeOfDay) => void;
   onToast: (msg: string) => void;
 }
+
+export type EngineOptions = RideConfig;
 
 /**
  * 骑行引擎：持有 Three.js 场景、游戏状态与渲染循环。
@@ -28,7 +31,7 @@ export class RideEngine {
   private sky: Sky;
   private scatter: Scatter;
   private poiAnims: Animatable[] = [];
-  private bike = new Bike();
+  private bike: Bike;
   private cb: EngineCallbacks;
 
   private started = false;
@@ -57,9 +60,12 @@ export class RideEngine {
   private fwd = new THREE.Vector3();
   private disposed = false;
 
-  constructor(canvas: HTMLCanvasElement, cb: EngineCallbacks) {
+  constructor(canvas: HTMLCanvasElement, cb: EngineCallbacks, options: EngineOptions = { sceneId: 'china', characterId: 'male' }) {
     this.canvas = canvas;
     this.cb = cb;
+
+    const scenePack = getScene(options.sceneId);
+    const characterId: CharacterId = options.characterId ?? 'male';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -67,15 +73,16 @@ export class RideEngine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = scenePack.id === 'russia' ? 0.92 : 1.05;
 
     this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3200);
 
-    this.world = new World(this.scene, POI_DEFS);
-    this.sky = new Sky(this.scene, this.loader);
+    this.world = new World(this.scene, scenePack);
+    this.sky = new Sky(this.scene, this.loader, scenePack.id);
     this.scatter = new Scatter(this.scene, this.world);
     this.poiAnims = buildPois(this.scene, this.world);
 
+    this.bike = new Bike(characterId);
     this.bike.root.rotation.order = 'YZX';
     this.scene.add(this.bike.root);
 

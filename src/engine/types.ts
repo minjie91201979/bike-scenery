@@ -5,6 +5,38 @@ export type CamMode = 'follow' | 'cinema' | 'fpv';
 
 export type PoiType = 'windmill' | 'lake' | 'meadow' | 'observatory' | 'lighthouse' | 'forest';
 
+/** 地标种类（中国省市 / 俄罗斯寒带简模） */
+export type LandmarkKind =
+  | 'tiananmen'
+  | 'greatwall'
+  | 'pagoda'
+  | 'dayan'
+  | 'panda'
+  | 'stupa'
+  | 'drumtower'
+  | 'pillars'
+  | 'crane_tower'
+  | 'huizhou'
+  | 'pavilion'
+  | 'westlake'
+  | 'tulou'
+  | 'canton_tower'
+  | 'karst_arch'
+  | 'coconut'
+  | 'shaolin'
+  | 'taishan'
+  | 'palace_roof'
+  | 'changbai'
+  | 'ice_tower'
+  | 'onion_cathedral'
+  | 'izba'
+  | 'baikal_pier'
+  | 'tundra_tent'
+  | 'volga_mill'
+  | 'baltic_lighthouse'
+  | 'ural_watchtower'
+  | 'aurora_dome';
+
 /** 景点定义（沿路线的参数位置） */
 export interface PoiDef {
   type: PoiType;
@@ -14,6 +46,8 @@ export interface PoiDef {
   side: -1 | 1;       // 路的哪一侧
   dist: number;       // 离路中心距离（米）
   radius: number;     // 场地半径（米）
+  /** 可选：省级地标简模，有则替代通用风车/观景台/灯塔主体 */
+  landmark?: LandmarkKind;
 }
 
 /** 解析成世界坐标后的景点 */

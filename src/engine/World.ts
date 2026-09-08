@@ -1,5 +1,6 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import type { Poi, PoiDef, Pose } from './types';
+import type { CurveParams, PaletteHints, ScenePack } from './scenes';
 
 /* ============================================================
  *  噪声：轻量 value noise + fbm（无外部依赖）
@@ -44,29 +45,6 @@ export const smoothstep = (a: number, b: number, x: number): number => {
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /* ============================================================
- *  路线：一条闭合环线（约 3.2 km）
- * ============================================================ */
-const CTRL_COUNT = 56;
-const BASE_RADIUS = 500;
-
-function buildCurve(): THREE.CatmullRomCurve3 {
-  const pts: THREE.Vector3[] = [];
-  for (let i = 0; i < CTRL_COUNT; i++) {
-    const a = (i / CTRL_COUNT) * Math.PI * 2;
-    const n1 = fbm(Math.cos(a) * 1.7 + 10, Math.sin(a) * 1.7 + 10, 2);
-    const n2 = fbm(Math.cos(a) * 3.4 + 50, Math.sin(a) * 3.4 + 50, 2);
-    const r = BASE_RADIUS * (0.62 + 0.5 * n1 + 0.14 * (n2 - 0.5));
-    pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
-  }
-  return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
-}
-
-/** 道路纵向高度：只取低频，保证坡度平缓 */
-function roadHeight(x: number, z: number): number {
-  return (fbm(x * 0.00115 + 3.1, z * 0.00115 + 7.7, 3) - 0.42) * 30;
-}
-
-/* ============================================================
  *  地形走廊尺寸
  * ============================================================ */
 export const SEG_LEN = 2.2;
@@ -74,6 +52,9 @@ export const SEGS_AHEAD = 128;
 export const SEGS_BEHIND = 10;
 export const ROWS = SEGS_AHEAD + SEGS_BEHIND + 1;
 export const ROAD_HALF = 3.6;
+const DASH_LEN = 4;
+const DASH_GAP = 4;
+const DASH_PERIOD = DASH_LEN + DASH_GAP;
 
 /** 横向偏移：靠近路面密集、远处稀疏 */
 export const LAT: number[] = [
@@ -102,6 +83,9 @@ export class World {
   rights: THREE.Vector3[] = [];
   pois: Poi[] = [];
   lakes: Lake[] = [];
+  readonly packId: string;
+  private curveParams: CurveParams;
+  private palette: PaletteHints;
   lastRow = -999;
   lastSkirtX = 1e9;
   lastSkirtZ = 1e9;
@@ -112,9 +96,9 @@ export class World {
   private road!: THREE.Mesh;
   private roadPos!: Float32Array;
   private roadUV!: Float32Array;
-  private dash!: THREE.Mesh;
-  private dashPos!: Float32Array;
-  private dashUV!: Float32Array;
+  private dashMarks!: THREE.InstancedMesh;
+  private dashDummy = new THREE.Object3D();
+  private dashUp = new THREE.Vector3();
   private edges: { mesh: THREE.Mesh; pos: Float32Array; side: number }[] = [];
   private skirt!: THREE.Mesh;
   private skirtPos!: Float32Array;
@@ -125,18 +109,43 @@ export class World {
   private tmpPos = new THREE.Vector3();
   private tmpCol = new THREE.Color();
 
-  constructor(scene: THREE.Scene, poiDefs: PoiDef[] = []) {
+  constructor(scene: THREE.Scene, pack: ScenePack) {
     this.scene = scene;
-    this.curve = buildCurve();
+    this.packId = pack.id;
+    this.curveParams = pack.curve;
+    this.palette = pack.palette ?? {};
+    this.curve = this.buildCurve(pack.curve);
     this.length = this.curve.getLength();
     this.sampleCount = Math.max(600, Math.round(this.length / SEG_LEN));
     this.segLen = this.length / this.sampleCount;
 
     this.buildSamples();
-    this.resolvePois(poiDefs);
+    this.resolvePois(pack.poiDefs);
     this.buildTerrain();
     this.buildRoad();
     this.buildSkirt();
+  }
+
+  private buildCurve(c: CurveParams): THREE.CatmullRomCurve3 {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i < c.ctrlCount; i++) {
+      const a = (i / c.ctrlCount) * Math.PI * 2;
+      const n1 = fbm(Math.cos(a) * c.radiusNoiseScale + c.seedOffset1, Math.sin(a) * c.radiusNoiseScale + c.seedOffset1, 2);
+      const n2 = fbm(Math.cos(a) * c.radiusNoiseScale2 + c.seedOffset2, Math.sin(a) * c.radiusNoiseScale2 + c.seedOffset2, 2);
+      const r = c.baseRadius * (0.62 + 0.5 * n1 + 0.14 * (n2 - 0.5));
+      pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+    }
+    return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+  }
+
+  /** 道路纵向高度：只取低频，保证坡度平缓 */
+  private roadHeight(x: number, z: number): number {
+    const c = this.curveParams;
+    return (fbm(x * c.heightFreq + c.heightSeedX, z * c.heightFreq + c.heightSeedZ, 3) - c.heightBias) * c.heightScale;
+  }
+
+  private macroHeight(x: number, z: number): number {
+    return this.roadHeight(x, z);
   }
 
   /* ---------- 等弧长采样 + 切线 / 右向量 ---------- */
@@ -144,7 +153,7 @@ export class World {
     const raw = this.curve.getSpacedPoints(this.sampleCount);
     const pts = raw.slice(0, this.sampleCount);
 
-    for (const p of pts) p.y = roadHeight(p.x, p.z);
+    for (const p of pts) p.y = this.roadHeight(p.x, p.z);
     // 多轮移动平均，消除过陡的坡
     for (let pass = 0; pass < 6; pass++) {
       const prev = pts.map((p) => p.y);
@@ -212,8 +221,9 @@ export class World {
   /* ---------- 高度场 ---------- */
   /** 自然地形（不含湖盆） */
   rawHeight(x: number, z: number): number {
-    const macro = (fbm(x * 0.00115 + 3.1, z * 0.00115 + 7.7, 3) - 0.42) * 30;
-    const hills = (fbm(x * 0.0042 + 21, z * 0.0042 + 13, 4) - 0.5) * 26;
+    const c = this.curveParams;
+    const macro = this.macroHeight(x, z);
+    const hills = (fbm(x * 0.0042 + 21 + c.seedOffset1 * 0.1, z * 0.0042 + 13 + c.seedOffset2 * 0.1, 4) - 0.5) * (c.heightScale * 0.87);
     const detail = (fbm(x * 0.021 + 61, z * 0.021 + 41, 3) - 0.5) * 2.2;
     return macro + hills + detail;
   }
@@ -242,7 +252,7 @@ export class World {
     const ad = Math.abs(lat);
     const t = smoothstep(ROAD_HALF + 0.9, ROAD_HALF + 20, ad);
     const outer = smoothstep(105, 142, ad);
-    const macro = (fbm(x * 0.00115 + 3.1, z * 0.00115 + 7.7, 3) - 0.42) * 30;
+    const macro = this.macroHeight(x, z);
     const natural = this.heightAt(x, z);
     let y = p.y + (natural - macro) * t * (1 - outer) + (natural - p.y) * outer;
     const shoulder = smoothstep(ROAD_HALF - 0.4, ROAD_HALF + 0.2, ad) *
@@ -263,7 +273,7 @@ export class World {
     const ad = Math.abs(lat);
     const t = smoothstep(ROAD_HALF + 0.9, ROAD_HALF + 20, ad);
     const outer = smoothstep(105, 142, ad);
-    const macro = (fbm(x * 0.00115 + 3.1, z * 0.00115 + 7.7, 3) - 0.42) * 30;
+    const macro = this.macroHeight(x, z);
     const natural = this.heightAt(x, z);
     let y = p.y + (natural - macro) * t * (1 - outer) + (natural - p.y) * outer;
     const shoulder = smoothstep(ROAD_HALF - 0.4, ROAD_HALF + 0.2, ad) *
@@ -275,15 +285,14 @@ export class World {
     const rise = y - p.y;
     const v = fbm(x * 0.055, z * 0.055, 2);
     const grass = fbm(x * 0.012 + 5, z * 0.012 + 9, 2);
-    let cr = lerp(0.30, 0.42, grass), cg = lerp(0.55, 0.68, grass), cb = lerp(0.24, 0.31, v);
+    const g0 = this.palette.grass ?? [0.30, 0.55, 0.24];
+    let cr = lerp(g0[0], g0[0] + 0.12, grass);
+    let cg = lerp(g0[1], Math.min(0.78, g0[1] + 0.13), grass);
+    let cb = lerp(g0[2], g0[2] + 0.07, v);
 
     if (rise > 7) {
       const rt = smoothstep(7, 16, rise);
       cr = lerp(cr, 0.55, rt); cg = lerp(cg, 0.53, rt); cb = lerp(cb, 0.46, rt);
-    }
-    if (ad < 7.5) {
-      const st = 1 - smoothstep(4.6, 7.5, ad);
-      cr = lerp(cr, 0.52, st * 0.65); cg = lerp(cg, 0.57, st * 0.65); cb = lerp(cb, 0.30, st * 0.65);
     }
     for (const lake of this.lakes) {
       const dx = x - lake.x, dz = z - lake.z;
@@ -293,8 +302,49 @@ export class World {
         cr = lerp(cr, 0.78, st); cg = lerp(cg, 0.71, st); cb = lerp(cb, 0.52, st);
       }
     }
+    // 俄罗斯：雪意斑驳 + 更冷的地面色
+    if (this.packId === 'russia') {
+      const snow = fbm(x * 0.028 + 3.1, z * 0.028 + 7.4, 2);
+      const st = smoothstep(0.48, 0.82, snow);
+      cr = lerp(cr, 0.90, st * 0.72);
+      cg = lerp(cg, 0.92, st * 0.72);
+      cb = lerp(cb, 0.95, st * 0.72);
+      cr *= 0.93; cg *= 0.96; cb = Math.min(1, cb * 1.06);
+      // 湖岸偏灰白冰缘
+      for (const lake of this.lakes) {
+        const dx2 = x - lake.x, dz2 = z - lake.z;
+        const d2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
+        if (d2 < lake.r + 8) {
+          const ice = smoothstep(lake.r + 8, lake.r + 0.5, d2);
+          cr = lerp(cr, 0.86, ice * 0.55);
+          cg = lerp(cg, 0.90, ice * 0.55);
+          cb = lerp(cb, 0.94, ice * 0.55);
+        }
+      }
+    }
+
+    // 路廊下地形：深沥青灰（含软路肩），中/俄共用，压过草地与雪斑
+    {
+      const roadCore = 1 - smoothstep(ROAD_HALF - 0.15, ROAD_HALF + 0.05, ad);
+      const roadShoulder = (1 - smoothstep(ROAD_HALF + 0.05, ROAD_HALF + 1.8, ad)) *
+        smoothstep(ROAD_HALF - 0.15, ROAD_HALF + 0.05, ad);
+      const asphaltAmt = Math.min(1, roadCore + roadShoulder * 0.85);
+      if (asphaltAmt > 0.001) {
+        const grit = 0.06 + 0.04 * v + 0.01 * grass; // ~0.06–0.11
+        const ar = grit;
+        const ag = grit * 1.02;
+        const ab = grit * 1.05;
+        cr = lerp(cr, ar, asphaltAmt);
+        cg = lerp(cg, ag, asphaltAmt);
+        cb = lerp(cb, ab, asphaltAmt);
+      }
+    }
+
     const shade = 0.9 + 0.2 * v;
-    outColor.setRGB(cr * shade, cg * shade, cb * shade);
+    // 路面略少明暗起伏，保持沥青可读
+    const roadShadeAmt = 1 - smoothstep(ROAD_HALF + 0.05, ROAD_HALF + 1.8, ad);
+    const shadeEff = lerp(shade, 0.96 + 0.06 * v, roadShadeAmt);
+    outColor.setRGB(cr * shadeEff, cg * shadeEff, cb * shadeEff);
   }
 
   /* ---------- 地形网格 ---------- */
@@ -338,27 +388,39 @@ export class World {
       idx.push(a, c, b, b, c, d);
     }
     g.setIndex(idx);
-    this.road = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x3d4249 }));
+    // 更深沥青：Basic 不受光照洗白，颜色更沉
+    this.road = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      map: makeAsphaltTexture(),
+      color: 0x3d4045,
+      toneMapped: false,
+    }));
     this.road.receiveShadow = true;
     this.road.frustumCulled = false;
     this.scene.add(this.road);
 
-    // 中心虚线
-    const gd = new THREE.BufferGeometry();
-    this.dashPos = new Float32Array(segs * 2 * 3);
-    this.dashUV = new Float32Array(segs * 2 * 2);
-    gd.setAttribute('position', new THREE.BufferAttribute(this.dashPos, 3));
-    gd.setAttribute('uv', new THREE.BufferAttribute(this.dashUV, 2));
-    gd.setIndex(idx.slice());
-    this.dash = new THREE.Mesh(gd, new THREE.MeshBasicMaterial({
-      map: makeDashTexture(), transparent: true, opacity: 0.5, depthWrite: false
-    }));
-    this.dash.frustumCulled = false;
-    this.scene.add(this.dash);
+    // 中心白虚线：贴地薄片，避免厚盒子穿进车轮
+    const dashGeo = new THREE.PlaneGeometry(0.55, DASH_LEN);
+    dashGeo.rotateX(-Math.PI / 2);
+    const dashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      toneMapped: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    this.dashMarks = new THREE.InstancedMesh(dashGeo, dashMat, segs);
+    this.dashMarks.frustumCulled = false;
+    this.dashMarks.renderOrder = 2;
+    this.dashMarks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.scene.add(this.dashMarks);
+    this.dashDummy.matrixAutoUpdate = false;
+    this.dashDummy.matrix.makeScale(0, 0, 0);
+    for (let i = 0; i < segs; i++) this.dashMarks.setMatrixAt(i, this.dashDummy.matrix);
+    this.dashMarks.instanceMatrix.needsUpdate = true;
 
-    // 两侧实线
+    // 两侧细白边线
     const edgeMat = new THREE.MeshBasicMaterial({
-      color: 0xe8eef5, transparent: true, opacity: 0.42, depthWrite: false
+      color: 0xf5f7fa, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false,
     });
     for (let s = 0; s < 2; s++) {
       const ge = new THREE.BufferGeometry();
@@ -367,6 +429,7 @@ export class World {
       ge.setIndex(idx.slice());
       const m = new THREE.Mesh(ge, edgeMat);
       m.frustumCulled = false;
+      m.renderOrder = 1;
       this.scene.add(m);
       this.edges.push({ mesh: m, pos: ep, side: s === 0 ? -1 : 1 });
     }
@@ -421,10 +484,21 @@ export class World {
         const v = fbm(x * 0.055, z * 0.055, 2);
         const grass = fbm(x * 0.012 + 5, z * 0.012 + 9, 2);
         const shade = 0.88 + 0.2 * v;
+        const sk = this.palette.skirt ?? this.palette.grass ?? [0.30, 0.55, 0.24];
+        let sr = (sk[0] + grass * 0.12) * shade;
+        let sg = (sk[1] + grass * 0.13) * shade;
+        let sb = (sk[2] + v * 0.07) * shade;
+        if (this.packId === 'russia') {
+          const snow = fbm(x * 0.022 + 1.5, z * 0.022 + 4.2, 2);
+          const st = smoothstep(0.5, 0.85, snow);
+          sr = lerp(sr, 0.88 * shade, st * 0.65);
+          sg = lerp(sg, 0.91 * shade, st * 0.65);
+          sb = lerp(sb, 0.95 * shade, st * 0.65);
+        }
         this.skirtPos[vi] = x; this.skirtPos[vi + 1] = y; this.skirtPos[vi + 2] = z;
-        this.skirtCol[vi] = (0.30 + grass * 0.12) * shade;
-        this.skirtCol[vi + 1] = (0.55 + grass * 0.13) * shade;
-        this.skirtCol[vi + 2] = (0.24 + v * 0.07) * shade;
+        this.skirtCol[vi] = sr;
+        this.skirtCol[vi + 1] = sg;
+        this.skirtCol[vi + 2] = sb;
         vi += 3;
       }
     }
@@ -460,43 +534,36 @@ export class World {
     tg.computeBoundingSphere();
 
     const rp = this.roadPos, ru = this.roadUV;
-    const dp = this.dashPos, du = this.dashUV;
-    let ri = 0, ui = 0, di = 0, d2 = 0;
+    let ri = 0, ui = 0;
     for (let r = 0; r < ROWS; r++) {
       const k = baseRow + r;
       const n = this.sampleCount;
       const idx = ((k % n) + n) % n;
       const p = this.samples[idx];
       const rt = this.rights[idx];
-      const y = p.y + 0.055;
-      const vCoord = k * this.segLen * 0.08;
+      // 略抬高路面，减少与地形 z-fight
+      const y = p.y + 0.11;
+      const roadV = k * this.segLen * 0.35;
 
       rp[ri++] = p.x - rt.x * ROAD_HALF; rp[ri++] = y; rp[ri++] = p.z - rt.z * ROAD_HALF;
       rp[ri++] = p.x + rt.x * ROAD_HALF; rp[ri++] = y; rp[ri++] = p.z + rt.z * ROAD_HALF;
-      ru[ui++] = 0; ru[ui++] = vCoord;
-      ru[ui++] = 1; ru[ui++] = vCoord;
-
-      dp[di++] = p.x - rt.x * 0.14; dp[di++] = y + 0.012; dp[di++] = p.z - rt.z * 0.14;
-      dp[di++] = p.x + rt.x * 0.14; dp[di++] = y + 0.012; dp[di++] = p.z + rt.z * 0.14;
-      du[d2++] = 0; du[d2++] = vCoord;
-      du[d2++] = 1; du[d2++] = vCoord;
+      ru[ui++] = 0; ru[ui++] = roadV;
+      ru[ui++] = 1; ru[ui++] = roadV;
 
       for (const e of this.edges) {
         const off = e.side * (ROAD_HALF - 0.32);
         const o = r * 6;
-        e.pos[o] = p.x + rt.x * off - rt.x * 0.09; e.pos[o + 1] = y + 0.012; e.pos[o + 2] = p.z + rt.z * off - rt.z * 0.09;
-        e.pos[o + 3] = p.x + rt.x * off + rt.x * 0.09; e.pos[o + 4] = y + 0.012; e.pos[o + 5] = p.z + rt.z * off + rt.z * 0.09;
+        e.pos[o] = p.x + rt.x * off - rt.x * 0.09; e.pos[o + 1] = y + 0.03; e.pos[o + 2] = p.z + rt.z * off - rt.z * 0.09;
+        e.pos[o + 3] = p.x + rt.x * off + rt.x * 0.09; e.pos[o + 4] = y + 0.03; e.pos[o + 5] = p.z + rt.z * off + rt.z * 0.09;
       }
     }
     const rg = this.road.geometry;
     rg.attributes.position.needsUpdate = true;
     rg.attributes.uv.needsUpdate = true;
+    rg.computeVertexNormals();
     rg.computeBoundingSphere();
 
-    const dg = this.dash.geometry;
-    dg.attributes.position.needsUpdate = true;
-    dg.attributes.uv.needsUpdate = true;
-    dg.computeBoundingSphere();
+    this.placeDashes(baseRow);
 
     for (const e of this.edges) {
       e.mesh.geometry.attributes.position.needsUpdate = true;
@@ -504,18 +571,69 @@ export class World {
     }
     return true;
   }
+
+  /** 按弧长均匀放置虚线：4m 实 / 4m 空，每周期一块，避免重叠导致长短不一 */
+  private placeDashes(baseRow: number): void {
+    const startS = baseRow * this.segLen;
+    const endS = (baseRow + ROWS) * this.segLen;
+    const first = Math.floor(startS / DASH_PERIOD) - 1;
+    const last = Math.ceil(endS / DASH_PERIOD) + 1;
+    const cap = ROWS;
+    let i = 0;
+
+    for (let d = first; d <= last && i < cap; d++) {
+      const pose = this.poseAt(d * DASH_PERIOD + DASH_LEN * 0.5);
+      const rt = pose.right;
+      const tn = pose.tan;
+      tn.normalize();
+      this.dashUp.crossVectors(tn, rt).normalize();
+      if (this.dashUp.y < 0) this.dashUp.negate();
+      rt.crossVectors(this.dashUp, tn).normalize();
+      this.dashDummy.matrix.makeBasis(rt, this.dashUp, tn);
+      this.dashDummy.matrix.setPosition(pose.pos.x, pose.pos.y + 0.112, pose.pos.z);
+      this.dashMarks.setMatrixAt(i, this.dashDummy.matrix);
+      i++;
+    }
+
+    this.dashDummy.matrix.makeScale(0, 0, 0);
+    this.dashDummy.matrix.setPosition(0, -200, 0);
+    while (i < cap) {
+      this.dashMarks.setMatrixAt(i, this.dashDummy.matrix);
+      i++;
+    }
+    this.dashMarks.instanceMatrix.needsUpdate = true;
+    this.dashMarks.computeBoundingSphere();
+  }
 }
 
-/** 中心虚线贴图（上半段实、下半段空） */
-function makeDashTexture(): THREE.CanvasTexture {
+/** 沥青噪点贴图：深灰底 + 轻微明暗颗粒 */
+function makeAsphaltTexture(): THREE.CanvasTexture {
+  const size = 128;
   const c = document.createElement('canvas');
-  c.width = 8; c.height = 64;
+  c.width = size;
+  c.height = size;
   const ctx = c.getContext('2d')!;
-  ctx.clearRect(0, 0, 8, 64);
-  ctx.fillStyle = '#f4f8ff';
-  ctx.fillRect(0, 0, 8, 30);
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      const f = n - Math.floor(n);
+      const n2 = Math.sin((x + 17) * 39.233 + (y + 9) * 11.135) * 24634.121;
+      const f2 = n2 - Math.floor(n2);
+      const base = 8 + f * 10 + f2 * 5;
+      img.data[i] = base;
+      img.data[i + 1] = base + 1;
+      img.data[i + 2] = base + 3;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   return tex;
 }
+

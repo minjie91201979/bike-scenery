@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameCanvas } from './components/GameCanvas';
+import { GlobeSelect } from './components/GlobeSelect';
 import { Hud } from './components/Hud';
 import { StartScreen } from './components/StartScreen';
 import type { RideEngine } from './engine/RideEngine';
+import type { CountryId, RideConfig } from './engine/scenes';
 import type { World } from './engine/World';
 import type { CamMode, Stats, TimeOfDay } from './engine/types';
 
@@ -11,22 +13,27 @@ const INITIAL_STATS: Stats = {
   poi: null, poiDist: Infinity, x: 0, z: 0, yaw: 0,
 };
 
+type Phase = 'globe' | 'character' | 'ride';
+
 export default function App() {
   const engineRef = useRef<RideEngine | null>(null);
   const [world, setWorld] = useState<World | null>(null);
-  const [started, setStarted] = useState(false);
+  const [config, setConfig] = useState<RideConfig | null>(null);
+  const [phase, setPhase] = useState<Phase>('globe');
+  const [countryId, setCountryId] = useState<CountryId | null>(null);
   const [cam, setCam] = useState<CamMode>('follow');
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('day');
   const [stats, setStats] = useState<Stats>(INITIAL_STATS);
   const [toast, setToast] = useState('');
   const [helpVisible, setHelpVisible] = useState(true);
 
+  const started = phase === 'ride';
+
   const handleReady = useCallback((engine: RideEngine | null) => {
     engineRef.current = engine;
     setWorld(engine ? engine.world : null);
   }, []);
 
-  // 引擎按键 H → 切换帮助面板
   useEffect(() => {
     const handler = () => setHelpVisible((v) => !v);
     window.addEventListener('ride:toggle-help', handler);
@@ -49,34 +56,70 @@ export default function App() {
     engineRef.current?.setTimeOfDay(t);
   }, []);
 
-  const handleStart = useCallback(() => setStarted(true), []);
+  const handleCountrySelect = useCallback((id: CountryId) => {
+    setCountryId(id);
+    setPhase('character');
+  }, []);
+
+  const handleLocked = useCallback((name: string) => {
+    showToast(`「${name}」开发中，敬请期待`);
+  }, [showToast]);
+
+  const handleStart = useCallback((cfg: RideConfig) => {
+    setConfig(cfg);
+    setPhase('ride');
+    setStats(INITIAL_STATS);
+    setCam('follow');
+    setTimeOfDay('day');
+  }, []);
+
+  const handleBackToGlobe = useCallback(() => {
+    setCountryId(null);
+    setPhase('globe');
+  }, []);
 
   return (
     <>
-      <GameCanvas
-        started={started}
-        onReady={handleReady}
-        onStats={setStats}
-        onCamChange={setCam}
-        onTimeChange={setTimeOfDay}
-        onToast={showToast}
-      />
+      {config && (
+        <GameCanvas
+          key={`${config.sceneId}-${config.characterId}`}
+          config={config}
+          started={started}
+          onReady={handleReady}
+          onStats={setStats}
+          onCamChange={setCam}
+          onTimeChange={setTimeOfDay}
+          onToast={showToast}
+        />
+      )}
 
-      <Hud
-        stats={stats}
-        cam={cam}
-        timeOfDay={timeOfDay}
-        world={world}
-        helpVisible={helpVisible}
-        onCam={handleCam}
-        onTime={handleTime}
-        onShot={() => engineRef.current?.screenshot()}
-        onToggleHelp={() => setHelpVisible((v) => !v)}
-      />
+      {started && (
+        <Hud
+          stats={stats}
+          cam={cam}
+          timeOfDay={timeOfDay}
+          world={world}
+          helpVisible={helpVisible}
+          onCam={handleCam}
+          onTime={handleTime}
+          onShot={() => engineRef.current?.screenshot()}
+          onToggleHelp={() => setHelpVisible((v) => !v)}
+        />
+      )}
 
       <div id="toast" className={toast ? 'show' : ''}>{toast}</div>
 
-      {!started && <StartScreen onStart={handleStart} />}
+      {phase === 'globe' && (
+        <GlobeSelect onSelect={handleCountrySelect} onLocked={handleLocked} />
+      )}
+
+      {phase === 'character' && countryId && (
+        <StartScreen
+          countryId={countryId}
+          onStart={handleStart}
+          onBack={handleBackToGlobe}
+        />
+      )}
     </>
   );
 }

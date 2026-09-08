@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TimeOfDay } from './types';
+import type { SceneId } from './scenes';
 
 /* ============================================================
  *  天空球 / 远山 / 云 / 星星 / 太阳月亮 / 光照与雾
@@ -69,6 +70,7 @@ interface Snapshot {
 export class Sky {
   state: TimeOfDay = 'day';
   private scene: THREE.Scene;
+  private sceneId: SceneId;
   private cur: Snapshot;
   private skyMat!: THREE.MeshBasicMaterial;
   private sky!: THREE.Mesh;
@@ -82,9 +84,12 @@ export class Sky {
   private disc!: THREE.Mesh;
   private hemi!: THREE.HemisphereLight;
   private sun!: THREE.DirectionalLight;
+  private snow: THREE.Points | null = null;
+  private snowVel: Float32Array | null = null;
 
-  constructor(scene: THREE.Scene, loader: THREE.TextureLoader) {
+  constructor(scene: THREE.Scene, loader: THREE.TextureLoader, sceneId: SceneId = 'china') {
     this.scene = scene;
+    this.sceneId = sceneId;
     this.cur = this.snapshot(CONFIGS.day);
     this.buildSky(loader);
     this.buildMountains(loader);
@@ -92,6 +97,7 @@ export class Sky {
     this.buildStars();
     this.buildDisc();
     this.buildLights();
+    if (sceneId === 'russia') this.buildSnow();
     scene.fog = new THREE.Fog(this.cur.fog.getHex(), this.cur.fogNear, this.cur.fogFar);
   }
 
@@ -207,6 +213,30 @@ export class Sky {
     this.scene.add(this.disc);
   }
 
+
+  /** 廉价雪花粒子（仅俄罗斯） */
+  private buildSnow(): void {
+    const N = 320;
+    const pos = new Float32Array(N * 3);
+    const vel = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 90;
+      pos[i * 3 + 1] = Math.random() * 40;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 90;
+      vel[i] = 2.2 + Math.random() * 3.5;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xe8f2ff, size: 0.55, sizeAttenuation: true,
+      transparent: true, opacity: 0.55, depthWrite: false, fog: true,
+    });
+    this.snow = new THREE.Points(g, mat);
+    this.snow.frustumCulled = false;
+    this.snowVel = vel;
+    this.scene.add(this.snow);
+  }
+
   private buildLights(): void {
     this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x9aa877, 1.05);
     this.scene.add(this.hemi);
@@ -224,6 +254,22 @@ export class Sky {
   /** 每帧：向目标时段插值 */
   update(dt: number, playerPos: THREE.Vector3): void {
     const target = this.snapshot(CONFIGS[this.state]);
+    // 俄罗斯：更冷的雾色 / 半球光 / 略低日晒
+    if (this.sceneId === 'russia') {
+      target.fog.lerp(new THREE.Color(0xc8d8e8), 0.45);
+      target.hemiSky.lerp(new THREE.Color(0xa8c4e0), 0.35);
+      target.hemiGround.lerp(new THREE.Color(0x7a8a92), 0.4);
+      target.skyTint.lerp(new THREE.Color(0xd8e6f5), 0.25);
+      target.mountainTint.lerp(new THREE.Color(0xc8d4e4), 0.3);
+      target.sunIntensity *= 0.88;
+      target.hemiIntensity *= 0.92;
+      target.fogNear *= 0.92;
+      target.fogFar *= 0.95;
+      if (this.state === 'night') {
+        target.skyTint.lerp(new THREE.Color(0x2a3a58), 0.2);
+        target.fog.lerp(new THREE.Color(0x152030), 0.25);
+      }
+    }
     const k = 1 - Math.pow(0.14, dt);
     const c = this.cur;
 
@@ -277,6 +323,21 @@ export class Sky {
       if (playerPos.x - cl.position.x > 520) cl.position.x += 1040;
       if (cl.position.z - playerPos.z > 520) cl.position.z -= 1040;
       if (playerPos.z - cl.position.z > 520) cl.position.z += 1040;
+    }
+
+    if (this.snow && this.snowVel) {
+      this.snow.position.set(playerPos.x, playerPos.y, playerPos.z);
+      const arr = this.snow.geometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < this.snowVel.length; i++) {
+        arr[i * 3 + 1] -= this.snowVel[i] * dt;
+        arr[i * 3] += Math.sin(i + performance.now() * 0.001) * 0.15 * dt;
+        if (arr[i * 3 + 1] < 0) {
+          arr[i * 3 + 1] = 38 + Math.random() * 8;
+          arr[i * 3] = (Math.random() - 0.5) * 90;
+          arr[i * 3 + 2] = (Math.random() - 0.5) * 90;
+        }
+      }
+      this.snow.geometry.attributes.position.needsUpdate = true;
     }
   }
 }
