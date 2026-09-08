@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build output
+dist/
+dist-ssr/
+*.local
+
+# vite / typescript
+*.tsbuildinfo
+.vite/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+*.suo
+*.user
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# temp debug screenshots
+.react_*.png

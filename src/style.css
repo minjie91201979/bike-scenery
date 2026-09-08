@@ -1,0 +1,179 @@
+:root {
+  --glass: rgba(14, 22, 36, 0.55);
+  --glass-strong: rgba(10, 16, 28, 0.78);
+  --stroke: rgba(255, 255, 255, 0.14);
+  --text: #f2f6ff;
+  --muted: rgba(226, 234, 250, 0.62);
+  --accent: #4ea8ff;
+  --accent-2: #7ef0d0;
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.34);
+  --radius: 16px;
+  --font: "PingFang SC", "Microsoft YaHei UI", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #0b1220; color: var(--text); font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { position: fixed; inset: 0; }
+canvas.scene { display: block; width: 100%; height: 100%; }
+
+/* ---------- HUD 通用 ---------- */
+.hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.panel {
+  background: var(--glass); border: 1px solid var(--stroke);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.hud button { pointer-events: auto; font-family: var(--font); }
+
+/* ---------- 左上：速度 / 里程 ---------- */
+#dash { position: absolute; left: 22px; top: 22px; padding: 14px 18px 12px; min-width: 178px; }
+.speed-row { display: flex; align-items: baseline; gap: 7px; }
+#speed {
+  font-size: 42px; font-weight: 700; line-height: 1; letter-spacing: -1px;
+  font-variant-numeric: tabular-nums; text-shadow: 0 0 22px rgba(78, 168, 255, 0.4);
+}
+.unit { font-size: 13px; color: var(--muted); font-weight: 600; }
+#speed-bar { margin-top: 10px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+#speed-fill {
+  height: 100%; width: 0%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width .12s linear;
+}
+.stats { display: flex; gap: 16px; margin-top: 11px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 10px; color: var(--muted); letter-spacing: .06em; }
+.stat-value { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* ---------- 右上：控制 ---------- */
+#tools { position: absolute; right: 22px; top: 22px; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.btn-group { display: flex; gap: 4px; padding: 4px; }
+.btn {
+  border: 0; background: transparent; color: var(--muted);
+  font-size: 12.5px; font-weight: 600; padding: 7px 13px;
+  border-radius: 11px; cursor: pointer; transition: all .16s ease; white-space: nowrap;
+}
+.btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.09); }
+.btn.active {
+  color: #06121f; background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 4px 14px rgba(78, 168, 255, 0.35);
+}
+.icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; padding: 0; }
+#minimap-wrap { padding: 10px; }
+#minimap { display: block; width: 132px; height: 132px; }
+.mm-label { font-size: 10px; color: var(--muted); text-align: center; margin-top: 6px; letter-spacing: .1em; }
+
+/* ---------- 底部：景点卡片 ---------- */
+#poi-card {
+  position: absolute; left: 50%; bottom: 34px; transform: translate(-50%, 18px);
+  padding: 13px 20px 13px 15px; display: flex; align-items: center; gap: 14px;
+  opacity: 0; transition: opacity .45s ease, transform .45s cubic-bezier(.22, 1, .36, 1);
+  max-width: 460px;
+}
+#poi-card.show { opacity: 1; transform: translate(-50%, 0); }
+#poi-dot {
+  width: 42px; height: 42px; border-radius: 13px; flex: none;
+  display: grid; place-items: center; font-size: 13px; font-weight: 800;
+  color: #06121f; letter-spacing: -.5px;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 6px 18px rgba(78, 168, 255, 0.34);
+}
+#poi-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#poi-name { font-size: 16.5px; font-weight: 700; letter-spacing: .01em; }
+#poi-desc { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+#poi-dist { font-size: 11px; color: var(--accent-2); font-weight: 600; }
+
+/* ---------- 左下：操作提示 ---------- */
+#help {
+  position: absolute; left: 22px; bottom: 30px; padding: 12px 15px;
+  font-size: 12px; color: var(--muted); line-height: 1.9;
+  transition: opacity .3s ease; max-width: 250px;
+}
+#help.hidden { opacity: 0; }
+#help .k {
+  display: inline-block; min-width: 20px; text-align: center;
+  padding: 1px 6px; margin-right: 5px; border-radius: 6px;
+  background: rgba(255, 255, 255, 0.11); border: 1px solid rgba(255, 255, 255, 0.13);
+  color: var(--text); font-size: 11px; font-weight: 650;
+}
+#help .title { font-size: 11px; color: var(--text); font-weight: 700; margin-bottom: 4px; letter-spacing: .05em; }
+
+/* ---------- 提示条 ---------- */
+#toast {
+  position: absolute; left: 50%; top: 26px; transform: translate(-50%, -14px);
+  padding: 10px 20px; font-size: 13px; font-weight: 600; z-index: 20; pointer-events: none;
+  background: var(--glass-strong); border: 1px solid var(--stroke);
+  border-radius: 99px; box-shadow: var(--shadow);
+  opacity: 0; transition: all .3s cubic-bezier(.22, 1, .36, 1);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 开场 ---------- */
+#start {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  background: #0b1220; transition: opacity .7s ease;
+}
+#start-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .62; filter: saturate(1.05); }
+#start::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(105deg, rgba(8, 14, 26, .94) 0%, rgba(8, 14, 26, .72) 42%, rgba(8, 14, 26, .35) 100%),
+    radial-gradient(120% 90% at 20% 100%, rgba(78, 168, 255, .22), transparent 60%);
+}
+#start-inner {
+  position: relative; z-index: 2; max-width: 560px; padding: 0 40px;
+  animation: rise .8s cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+#start h1 {
+  margin: 0 0 12px; font-size: 46px; font-weight: 800; letter-spacing: -1px;
+  background: linear-gradient(100deg, #ffffff 10%, var(--accent-2) 55%, var(--accent) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+#start .sub { font-size: 14.5px; color: rgba(226, 234, 250, .76); line-height: 1.8; margin-bottom: 8px; }
+#start .tag {
+  display: inline-block; font-size: 11px; letter-spacing: .16em; font-weight: 700;
+  color: var(--accent-2); margin-bottom: 16px; text-transform: uppercase;
+}
+.keycaps { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 26px; }
+.keycap {
+  display: flex; align-items: center; gap: 8px; padding: 8px 13px;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px; font-size: 12px; color: var(--muted);
+}
+.keycap b {
+  color: var(--text); font-weight: 700; font-size: 11.5px;
+  padding: 2px 7px; border-radius: 6px; background: rgba(255, 255, 255, 0.13);
+}
+#btn-start {
+  pointer-events: auto; border: 0; cursor: pointer; font-family: var(--font);
+  padding: 15px 40px; font-size: 15.5px; font-weight: 700; color: #06121f;
+  border-radius: 15px; letter-spacing: .03em;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 10px 30px rgba(78, 168, 255, 0.4);
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+#btn-start:hover { transform: translateY(-2px); box-shadow: 0 14px 38px rgba(78, 168, 255, .5); }
+#btn-start:active { transform: translateY(0); }
+#loading { font-size: 12.5px; color: var(--muted); margin-top: 16px; }
+
+@media (max-width: 760px) {
+  #dash { padding: 10px 13px; min-width: 140px; left: 12px; top: 12px; }
+  #speed { font-size: 32px; }
+  #tools { right: 12px; top: 12px; }
+  #minimap { width: 96px; height: 96px; }
+  #help { display: none; }
+  #poi-card { bottom: 18px; max-width: calc(100vw - 32px); }
+  #start h1 { font-size: 34px; }
+  #start-inner { padding: 0 24px; }
+}
