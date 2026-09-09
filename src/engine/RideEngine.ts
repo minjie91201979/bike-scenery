@@ -3,6 +3,9 @@ import { World } from './World';
 import { Sky } from './Sky';
 import { Bike } from './Bike';
 import { Scatter, buildPois, type Animatable } from './Props';
+import { Wildlife } from './Wildlife';
+import { SkyBirds } from './Birds';
+import { CoastBoats } from './CoastBoats';
 import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT } from './constants';
 import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
@@ -30,8 +33,13 @@ export class RideEngine {
   private loader = new THREE.TextureLoader();
   private sky: Sky;
   private scatter: Scatter;
+  private wildlife: Wildlife;
+  private birds: SkyBirds;
+  private boats: CoastBoats;
   private poiAnims: Animatable[] = [];
   private bike: Bike;
+  private hitSlow = 0;
+  private hitIframe = 0;
   private cb: EngineCallbacks;
 
   private started = false;
@@ -80,6 +88,9 @@ export class RideEngine {
     this.world = new World(this.scene, scenePack);
     this.sky = new Sky(this.scene, this.loader, scenePack.id);
     this.scatter = new Scatter(this.scene, this.world);
+    this.wildlife = new Wildlife(this.scene, this.world);
+    this.birds = new SkyBirds(this.scene, this.world);
+    this.boats = new CoastBoats(this.scene, this.world);
     this.poiAnims = buildPois(this.scene, this.world);
 
     this.bike = new Bike(characterId);
@@ -163,6 +174,10 @@ export class RideEngine {
     if (e.code === 'KeyC') this.cycleCam();
     if (e.code === 'KeyF') this.screenshot();
     if (e.code === 'KeyH') window.dispatchEvent(new CustomEvent('ride:toggle-help'));
+    if (e.code === 'Escape' && this.started) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('ride:change-scene'));
+    }
     if (e.code === 'Digit1') this.setTimeOfDay('day');
     if (e.code === 'Digit2') this.setTimeOfDay('sunset');
     if (e.code === 'Digit3') this.setTimeOfDay('night');
@@ -281,6 +296,11 @@ export class RideEngine {
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) this.latTarget = Math.min(MAX_LAT, this.latTarget + 5.5 * dt);
       this.latTarget *= Math.pow(0.55, dt);
       this.time += dt;
+      if (this.hitSlow > 0) {
+        this.hitSlow -= dt;
+        this.speed = Math.min(this.speed, BRAKE_MIN * 0.55);
+      }
+      if (this.hitIframe > 0) this.hitIframe -= dt;
     }
     this.lateral += (this.latTarget - this.lateral) * (1 - Math.pow(0.002, dt));
 
@@ -308,6 +328,15 @@ export class RideEngine {
     this.world.updateSkirt(bikePos.x, bikePos.z);
     this.sky.update(dt, bikePos);
     for (const a of this.poiAnims) a.tick(dt, { night: this.sky.night }, t);
+
+    this.birds.update(dt, bikePos);
+    this.boats.update(dt, bikePos, t);
+
+    const hit = this.wildlife.update(dt, bikePos, pose.right, pose.tan, this.speed);
+    if (hit && this.started && this.hitIframe <= 0) {
+      this.hitIframe = 2.4;
+      this.cb.onToast(hit.msg);
+    }
 
     this.updateCamera(dt, bikePos);
 

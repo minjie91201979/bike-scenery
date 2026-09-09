@@ -7,11 +7,13 @@ interface Props {
   cam: CamMode;
   timeOfDay: TimeOfDay;
   world: World | null;
+  sceneName: string;
   helpVisible: boolean;
   onCam: (m: CamMode) => void;
   onTime: (t: TimeOfDay) => void;
   onShot: () => void;
   onToggleHelp: () => void;
+  onChangeScene: () => void;
 }
 
 const TIMES: { key: TimeOfDay; label: string }[] = [
@@ -27,8 +29,8 @@ const CAMS: { key: CamMode; label: string }[] = [
 ];
 
 export function Hud({
-  stats, cam, timeOfDay, world, helpVisible,
-  onCam, onTime, onShot, onToggleHelp
+  stats, cam, timeOfDay, world, sceneName, helpVisible,
+  onCam, onTime, onShot, onToggleHelp, onChangeScene
 }: Props) {
   const kmh = stats.speed * 3.6;
   const mm = Math.floor(stats.time / 60);
@@ -65,6 +67,17 @@ export function Hud({
 
       {/* 右上：控制 */}
       <div id="tools">
+        <div className="btn-group panel scene-switch">
+          <span className="scene-now">{sceneName}</span>
+          <button
+            type="button"
+            className="btn"
+            title="返回地球选择其他国家 (Esc)"
+            onClick={onChangeScene}
+          >
+            切换场景
+          </button>
+        </div>
         <div className="btn-group panel">
           {TIMES.map((t) => (
             <button
@@ -126,6 +139,7 @@ export function Hud({
         <div><span className="k">A</span><span className="k">D</span> 左右换道</div>
         <div><span className="k">C</span> 切换视角 · <span className="k">F</span> 拍照</div>
         <div><span className="k">H</span> 隐藏提示 · <span className="k">1</span><span className="k">2</span><span className="k">3</span> 时段</div>
+        <div><span className="k">Esc</span> 返回地球切换场景</div>
         <div style={{ marginTop: 6, opacity: 0.75 }}>拖动鼠标可自由环视</div>
       </div>
     </div>

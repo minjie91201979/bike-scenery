@@ -4,7 +4,7 @@ import { GlobeSelect } from './components/GlobeSelect';
 import { Hud } from './components/Hud';
 import { StartScreen } from './components/StartScreen';
 import type { RideEngine } from './engine/RideEngine';
-import type { CountryId, RideConfig } from './engine/scenes';
+import { getScene, type CountryId, type RideConfig } from './engine/scenes';
 import type { World } from './engine/World';
 import type { CamMode, Stats, TimeOfDay } from './engine/types';
 
@@ -78,6 +78,19 @@ export default function App() {
     setPhase('globe');
   }, []);
 
+  const handleChangeScene = useCallback(() => {
+    setConfig(null);
+    setWorld(null);
+    setCountryId(null);
+    setPhase('globe');
+  }, []);
+
+  useEffect(() => {
+    const handler = () => handleChangeScene();
+    window.addEventListener('ride:change-scene', handler);
+    return () => window.removeEventListener('ride:change-scene', handler);
+  }, [handleChangeScene]);
+
   return (
     <>
       {config && (
@@ -93,17 +106,19 @@ export default function App() {
         />
       )}
 
-      {started && (
+      {started && config && (
         <Hud
           stats={stats}
           cam={cam}
           timeOfDay={timeOfDay}
           world={world}
+          sceneName={getScene(config.sceneId).name}
           helpVisible={helpVisible}
           onCam={handleCam}
           onTime={handleTime}
           onShot={() => engineRef.current?.screenshot()}
           onToggleHelp={() => setHelpVisible((v) => !v)}
+          onChangeScene={handleChangeScene}
         />
       )}
 

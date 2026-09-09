@@ -84,6 +84,7 @@ export class World {
   pois: Poi[] = [];
   lakes: Lake[] = [];
   readonly packId: string;
+  readonly coastLeft: boolean;
   private curveParams: CurveParams;
   private palette: PaletteHints;
   lastRow = -999;
@@ -108,10 +109,13 @@ export class World {
   private skirtRad = 6;
   private tmpPos = new THREE.Vector3();
   private tmpCol = new THREE.Color();
+  private coastWater: THREE.Mesh | null = null;
+  private coastWaterPos: Float32Array | null = null;
 
   constructor(scene: THREE.Scene, pack: ScenePack) {
     this.scene = scene;
     this.packId = pack.id;
+    this.coastLeft = !!pack.coastLeft;
     this.curveParams = pack.curve;
     this.palette = pack.palette ?? {};
     this.curve = this.buildCurve(pack.curve);
@@ -124,16 +128,24 @@ export class World {
     this.buildTerrain();
     this.buildRoad();
     this.buildSkirt();
+    this.buildCoastWater();
   }
 
   private buildCurve(c: CurveParams): THREE.CatmullRomCurve3 {
     const pts: THREE.Vector3[] = [];
+    const sx = c.scaleX ?? 1;
+    const sz = c.scaleZ ?? 1;
+    const rot = c.rotateY ?? 0;
+    const cr = Math.cos(rot);
+    const sr = Math.sin(rot);
     for (let i = 0; i < c.ctrlCount; i++) {
       const a = (i / c.ctrlCount) * Math.PI * 2;
       const n1 = fbm(Math.cos(a) * c.radiusNoiseScale + c.seedOffset1, Math.sin(a) * c.radiusNoiseScale + c.seedOffset1, 2);
       const n2 = fbm(Math.cos(a) * c.radiusNoiseScale2 + c.seedOffset2, Math.sin(a) * c.radiusNoiseScale2 + c.seedOffset2, 2);
       const r = c.baseRadius * (0.62 + 0.5 * n1 + 0.14 * (n2 - 0.5));
-      pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+      const lx = Math.cos(a) * r * sx;
+      const lz = Math.sin(a) * r * sz;
+      pts.push(new THREE.Vector3(lx * cr - lz * sr, 0, lx * sr + lz * cr));
     }
     return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
   }
@@ -257,7 +269,49 @@ export class World {
     let y = p.y + (natural - macro) * t * (1 - outer) + (natural - p.y) * outer;
     const shoulder = smoothstep(ROAD_HALF - 0.4, ROAD_HALF + 0.2, ad) *
       (1 - smoothstep(ROAD_HALF + 0.2, ROAD_HALF + 2.6, ad));
-    return y - shoulder * 0.22;
+    return this.applyCoastY(k, lat, p.y, y - shoulder * 0.22);
+  }
+
+  /** 左岸潮线（负 lat），沿路微微起伏 */
+  coastEdge(k: number): number {
+    return -12.8 - fbm(k * 0.062 + 2.4, 8.1, 2) * 8.5;
+  }
+
+  private applyCoastY(k: number, lat: number, roadY: number, y: number): number {
+    if (!this.coastLeft || lat >= -5.5) return y;
+    const edge = this.coastEdge(k);
+    if (lat >= edge) {
+      const beach = smoothstep(-5.5, edge, lat);
+      return lerp(y, roadY - 0.42, beach * 0.92);
+    }
+    const deep = smoothstep(edge, edge - 22, lat);
+    const bed = roadY - 2.55 - Math.max(0, edge - lat) * 0.04;
+    return lerp(roadY - 0.55, bed, deep);
+  }
+
+  /**
+   * 与地形网格一致的地表高度。hint 为上帧最近路段，只在邻域搜索，避免全线 O(n)。
+   */
+  surfaceY(x: number, z: number, hint: number): { y: number; index: number } {
+    const n = this.sampleCount;
+    const start = ((hint % n) + n) % n;
+    let best = start;
+    let bestD = Infinity;
+    const span = 28;
+    for (let o = -span; o <= span; o++) {
+      const i = (start + o + n) % n;
+      const p = this.samples[i];
+      const dx = x - p.x, dz = z - p.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD) {
+        bestD = d2;
+        best = i;
+      }
+    }
+    const p = this.samples[best];
+    const r = this.rights[best];
+    const lat = (x - p.x) * r.x + (z - p.z) * r.z;
+    return { y: this.groundY(best, lat), index: best };
   }
 
   /** 计算走廊顶点（位置 + 顶点色） */
@@ -269,16 +323,8 @@ export class World {
 
     const x = p.x + r.x * lat;
     const z = p.z + r.z * lat;
-
     const ad = Math.abs(lat);
-    const t = smoothstep(ROAD_HALF + 0.9, ROAD_HALF + 20, ad);
-    const outer = smoothstep(105, 142, ad);
-    const macro = this.macroHeight(x, z);
-    const natural = this.heightAt(x, z);
-    let y = p.y + (natural - macro) * t * (1 - outer) + (natural - p.y) * outer;
-    const shoulder = smoothstep(ROAD_HALF - 0.4, ROAD_HALF + 0.2, ad) *
-      (1 - smoothstep(ROAD_HALF + 0.2, ROAD_HALF + 2.6, ad));
-    y -= shoulder * 0.22;
+    const y = this.groundY(k, lat);
     outPos.set(x, y, z);
 
     // ---- 顶点色 ----
@@ -321,6 +367,26 @@ export class World {
           cb = lerp(cb, 0.94, ice * 0.55);
         }
       }
+    } else if (this.packId === 'canada') {
+      const snow = fbm(x * 0.028 + 3.1, z * 0.028 + 7.4, 2);
+      const st = smoothstep(0.62, 0.90, snow);
+      cr = lerp(cr, 0.90, st * 0.38);
+      cg = lerp(cg, 0.92, st * 0.38);
+      cb = lerp(cb, 0.95, st * 0.38);
+      cr *= 0.96; cg *= 0.98; cb = Math.min(1, cb * 1.03);
+    }
+
+    if (this.coastLeft && lat < -4) {
+      const edge = this.coastEdge(k);
+      const sand = smoothstep(-5.2, edge + 1.2, lat);
+      const sea = smoothstep(edge + 1.4, edge - 6, lat);
+      const chalk = this.packId === 'uk' ? 0.55 : 0.12;
+      cr = lerp(cr, lerp(0.86, 0.93, chalk), sand);
+      cg = lerp(cg, lerp(0.74, 0.90, chalk), sand);
+      cb = lerp(cb, lerp(0.54, 0.84, chalk), sand);
+      cr = lerp(cr, 0.10, sea);
+      cg = lerp(cg, 0.36, sea);
+      cb = lerp(cb, 0.46, sea);
     }
 
     // 路廊下地形：深沥青灰（含软路肩），中/俄共用，压过草地与雪斑
@@ -435,6 +501,31 @@ export class World {
     }
   }
 
+  /** 左岸水面条带：与地形同段滚动 */
+  private buildCoastWater(): void {
+    if (!this.coastLeft) return;
+    const segs = ROWS;
+    const g = new THREE.BufferGeometry();
+    this.coastWaterPos = new Float32Array(segs * 2 * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(this.coastWaterPos, 3));
+    const idx: number[] = [];
+    for (let r = 0; r < segs - 1; r++) {
+      const a = r * 2, b = a + 1, c = a + 2, d = a + 3;
+      idx.push(a, c, b, b, c, d);
+    }
+    g.setIndex(idx);
+    this.coastWater = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: this.packId === 'uk' ? 0x2a6e8c : 0x2a8ab0,
+      roughness: 0.14,
+      metalness: 0.32,
+      transparent: true,
+      opacity: 0.88,
+    }));
+    this.coastWater.frustumCulled = false;
+    this.coastWater.renderOrder = 1;
+    this.scene.add(this.coastWater);
+  }
+
   /* ---------- 裙边地形（150m → 650m，接远山） ---------- */
   private buildSkirt(): void {
     const ANG = 72, RADIAL = 6;
@@ -479,7 +570,8 @@ export class World {
         const rr = this.skirtRadii[r];
         const x = px + ca * rr;
         const z = pz + sa * rr;
-        const y = this.heightAt(x, z);
+        const y0 = this.heightAt(x, z);
+        let y = y0;
 
         const v = fbm(x * 0.055, z * 0.055, 2);
         const grass = fbm(x * 0.012 + 5, z * 0.012 + 9, 2);
@@ -494,6 +586,26 @@ export class World {
           sr = lerp(sr, 0.88 * shade, st * 0.65);
           sg = lerp(sg, 0.91 * shade, st * 0.65);
           sb = lerp(sb, 0.95 * shade, st * 0.65);
+        } else if (this.packId === 'canada') {
+          const snow = fbm(x * 0.022 + 1.5, z * 0.022 + 4.2, 2);
+          const st = smoothstep(0.62, 0.90, snow);
+          sr = lerp(sr, 0.88 * shade, st * 0.35);
+          sg = lerp(sg, 0.91 * shade, st * 0.35);
+          sb = lerp(sb, 0.95 * shade, st * 0.35);
+        }
+        if (this.coastLeft && this.lastRow > -90000) {
+          const n = this.sampleCount;
+          const idx = ((this.lastRow % n) + n) % n;
+          const right = this.rights[idx];
+          const roadY = this.samples[idx].y;
+          const lat = (x - px) * right.x + (z - pz) * right.z;
+          if (lat < -16) {
+            const sea = smoothstep(-16, -48, lat);
+            y = lerp(y0, roadY - 2.45, sea);
+            sr = lerp(sr, 0.10 * shade, sea);
+            sg = lerp(sg, 0.34 * shade, sea);
+            sb = lerp(sb, 0.48 * shade, sea);
+          }
         }
         this.skirtPos[vi] = x; this.skirtPos[vi + 1] = y; this.skirtPos[vi + 2] = z;
         this.skirtCol[vi] = sr;
@@ -568,6 +680,27 @@ export class World {
     for (const e of this.edges) {
       e.mesh.geometry.attributes.position.needsUpdate = true;
       e.mesh.geometry.computeBoundingSphere();
+    }
+
+    if (this.coastWater && this.coastWaterPos) {
+      const wp = this.coastWaterPos;
+      let wi = 0;
+      for (let r = 0; r < ROWS; r++) {
+        const k = baseRow + r;
+        const n = this.sampleCount;
+        const idx = ((k % n) + n) % n;
+        const p = this.samples[idx];
+        const rt = this.rights[idx];
+        const edge = this.coastEdge(k);
+        const inner = edge - 0.9;
+        const wy = p.y - 1.08;
+        wp[wi++] = p.x + rt.x * inner; wp[wi++] = wy; wp[wi++] = p.z + rt.z * inner;
+        wp[wi++] = p.x + rt.x * -150; wp[wi++] = wy; wp[wi++] = p.z + rt.z * -150;
+      }
+      const wg = this.coastWater.geometry;
+      wg.attributes.position.needsUpdate = true;
+      wg.computeVertexNormals();
+      wg.computeBoundingSphere();
     }
     return true;
   }

@@ -3,8 +3,6 @@ import type { World } from '../engine/World';
 import type { Stats } from '../engine/types';
 
 const SIZE = 264;
-const MM_RANGE = 680;
-const SCALE = (SIZE / 2) / MM_RANGE;
 
 interface Props {
   world: World | null;
@@ -19,6 +17,12 @@ export function Minimap({ world, stats }: Props) {
   // 底图：环线 + 景点
   useEffect(() => {
     if (!world) return;
+    let span = 40;
+    for (const p of world.samples) {
+      span = Math.max(span, Math.abs(p.x), Math.abs(p.z));
+    }
+    span += 50;
+    const scale = (SIZE / 2) / span;
     const base = document.createElement('canvas');
     base.width = base.height = SIZE;
     const c = base.getContext('2d')!;
@@ -30,7 +34,7 @@ export function Minimap({ world, stats }: Props) {
     c.lineJoin = 'round';
     c.beginPath();
     world.samples.forEach((p, i) => {
-      const x = p.x * SCALE, y = p.z * SCALE;
+      const x = p.x * scale, y = p.z * scale;
       if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
     });
     c.closePath();
@@ -41,10 +45,11 @@ export function Minimap({ world, stats }: Props) {
     for (const poi of world.pois) {
       c.fillStyle = '#7ef0d0';
       c.beginPath();
-      c.arc(poi.pos.x * SCALE, poi.pos.z * SCALE, 3.4, 0, Math.PI * 2);
+      c.arc(poi.pos.x * scale, poi.pos.z * scale, 3.4, 0, Math.PI * 2);
       c.fill();
     }
     c.restore();
+    base.dataset.scale = String(scale);
     baseRef.current = base;
   }, [world]);
 
@@ -57,8 +62,9 @@ export function Minimap({ world, stats }: Props) {
     ctx.clearRect(0, 0, SIZE, SIZE);
     if (base) ctx.drawImage(base, 0, 0);
 
-    const x = SIZE / 2 + stats.x * SCALE;
-    const y = SIZE / 2 + stats.z * SCALE;
+    const scale = Number(base?.dataset.scale || 0.2);
+    const x = SIZE / 2 + stats.x * scale;
+    const y = SIZE / 2 + stats.z * scale;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(-stats.yaw);
