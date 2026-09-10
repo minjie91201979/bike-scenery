@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { rand, ROWS } from './World';
 import type { World } from './World';
 import type { LandmarkKind } from './types';
+import { createGreeter } from './Greeter';
+import { greetersForChinaPoi, russiaOutfitsForPoi } from './ethnic';
 
 /* ============================================================
  *  道路两侧散布物（松树 / 阔叶树 / 灌木 / 石头 / 野花 + 各国特有植物）
@@ -3969,6 +3971,36 @@ export function buildPois(scene: THREE.Scene, world: World): Animatable[] {
       }
       inst.instanceMatrix.needsUpdate = true;
       scene.add(inst);
+    }
+
+    // ---- 迎宾 NPC（中国固定民族 / 俄罗斯传统服饰）----
+    if (world.packId === 'china' || world.packId === 'russia') {
+      const outfits = world.packId === 'china'
+        ? greetersForChinaPoi(poi.name, poi.id)
+        : russiaOutfitsForPoi(poi.id);
+      const hint = Math.round(poi.t * world.sampleCount) % world.sampleCount;
+      for (let gi = 0; gi < outfits.length; gi++) {
+        const handle = createGreeter(outfits[gi]);
+        // Roadside shoulder toward landmark so the rider can see them
+        const dx = poi.pos.x - poi.roadPos.x;
+        const dz = poi.pos.z - poi.roadPos.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = dx / len;
+        const nz = dz / len;
+        const tx = -nz;
+        const tz = nx;
+        const lateral = 4.6 + gi * 0.7;
+        const along = (gi - (outfits.length - 1) / 2) * 1.1;
+        const x = poi.roadPos.x + nx * lateral + tx * along;
+        const z = poi.roadPos.z + nz * lateral + tz * along;
+        // Corridor ground (visible mesh), not natural heightAt — avoids floating
+        const y = world.surfaceY(x, z, hint).y;
+        handle.root.position.set(x, y, z);
+        handle.root.lookAt(poi.roadPos.x, y, poi.roadPos.z);
+        handle.root.userData.baseYaw = handle.root.rotation.y;
+        scene.add(handle.root);
+        animatables.push({ tick: handle.tick });
+      }
     }
 
     // ---- 浮动地标 ----

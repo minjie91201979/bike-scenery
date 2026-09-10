@@ -71,6 +71,8 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
     renderer.setSize(width, height);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
+    renderer.domElement.style.touchAction = 'none';
+    mount.style.touchAction = 'none';
 
     const earthGroup = new THREE.Group();
     scene.add(earthGroup);
@@ -230,38 +232,21 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
     let raf = 0;
     let disposed = false;
 
-    const onPointerDown = (e: PointerEvent) => {
-      dragging = true;
-      moved = false;
-      autoSpin = false;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
+    const applyDrag = (clientX: number, clientY: number) => {
+      const dx = clientX - lastX;
+      const dy = clientY - lastY;
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       rotY += dx * 0.005;
       rotX += dy * 0.004;
       rotX = Math.max(-0.9, Math.min(0.9, rotX));
-      lastX = e.clientX;
-      lastY = e.clientY;
+      lastX = clientX;
+      lastY = clientY;
     };
 
-    const onPointerUp = (e: PointerEvent) => {
-      if (!dragging) return;
-      dragging = false;
-      if (moved) {
-        // 拖动后稍后恢复慢转
-        window.setTimeout(() => { if (!disposed) autoSpin = true; }, 2200);
-        return;
-      }
+    const pickAt = (clientX: number, clientY: number) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(pickables, false);
       if (hits.length > 0) {
@@ -274,7 +259,80 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
           }
         }
       }
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      // Prefer mouse/pen via pointer; touch handled separately to avoid double-fire
+      if (e.pointerType === 'touch') return;
+      dragging = true;
+      moved = false;
+      autoSpin = false;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      if (!dragging) return;
+      applyDrag(e.clientX, e.clientY);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      if (!dragging) return;
+      dragging = false;
+      if (moved) {
+        window.setTimeout(() => { if (!disposed) autoSpin = true; }, 2200);
+        return;
+      }
+      pickAt(e.clientX, e.clientY);
       window.setTimeout(() => { if (!disposed) autoSpin = true; }, 1800);
+    };
+
+    let touchId: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      if (touchId !== null) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      e.preventDefault();
+      touchId = t.identifier;
+      dragging = true;
+      moved = false;
+      autoSpin = false;
+      lastX = t.clientX;
+      lastY = t.clientY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touchId) {
+          e.preventDefault();
+          applyDrag(t.clientX, t.clientY);
+          break;
+        }
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (touchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touchId) {
+          e.preventDefault();
+          dragging = false;
+          touchId = null;
+          if (moved) {
+            window.setTimeout(() => { if (!disposed) autoSpin = true; }, 2200);
+          } else {
+            pickAt(t.clientX, t.clientY);
+            window.setTimeout(() => { if (!disposed) autoSpin = true; }, 1800);
+          }
+          break;
+        }
+      }
     };
 
     const onResize = () => {
@@ -285,9 +343,14 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
       renderer.setSize(w, h);
     };
 
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    const canvasEl = renderer.domElement;
+    canvasEl.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    canvasEl.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvasEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvasEl.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvasEl.addEventListener('touchcancel', onTouchEnd, { passive: false });
     window.addEventListener('resize', onResize);
 
     const clock = new THREE.Clock();
@@ -306,9 +369,13 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      canvasEl.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      canvasEl.removeEventListener('touchstart', onTouchStart);
+      canvasEl.removeEventListener('touchmove', onTouchMove);
+      canvasEl.removeEventListener('touchend', onTouchEnd);
+      canvasEl.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('resize', onResize);
       renderer.dispose();
       earthGeo.dispose();
@@ -336,8 +403,8 @@ export function GlobeSelect({ onSelect, onLocked }: Props) {
       <div id="globe-chrome">
         <div className="tag">Scenery Ride · Globe</div>
         <h1>选择国家</h1>
-        <p className="sub">点击地球上的国家，开启一段风景骑行。拖动可旋转地球。</p>
-        <p className="globe-hint">点击地球上的国家 · 青绿标记已开放</p>
+        <p className="sub">点击地球上的国家，开启一段风景骑行。拖动 / 手指滑动可旋转地球。</p>
+        <p className="globe-hint">点击或轻触国家 · 青绿标记已开放</p>
       </div>
       <div id="globe-canvas" ref={mountRef} />
     </div>

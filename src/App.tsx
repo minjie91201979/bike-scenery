@@ -3,10 +3,12 @@ import { GameCanvas } from './components/GameCanvas';
 import { GlobeSelect } from './components/GlobeSelect';
 import { Hud } from './components/Hud';
 import { StartScreen } from './components/StartScreen';
+import { TouchControls } from './components/TouchControls';
 import type { RideEngine } from './engine/RideEngine';
 import { getScene, type CountryId, type RideConfig } from './engine/scenes';
 import type { World } from './engine/World';
 import type { CamMode, Stats, TimeOfDay } from './engine/types';
+import { isTouchUi, subscribeTouchUi } from './utils/touchUi';
 
 const INITIAL_STATS: Stats = {
   speed: 0, dist: 0, time: 0, seen: 0, total: 6,
@@ -17,6 +19,7 @@ type Phase = 'globe' | 'character' | 'ride';
 
 export default function App() {
   const engineRef = useRef<RideEngine | null>(null);
+  const [engine, setEngine] = useState<RideEngine | null>(null);
   const [world, setWorld] = useState<World | null>(null);
   const [config, setConfig] = useState<RideConfig | null>(null);
   const [phase, setPhase] = useState<Phase>('globe');
@@ -26,12 +29,23 @@ export default function App() {
   const [stats, setStats] = useState<Stats>(INITIAL_STATS);
   const [toast, setToast] = useState('');
   const [helpVisible, setHelpVisible] = useState(true);
+  const [touchUi, setTouchUi] = useState(() => isTouchUi());
 
   const started = phase === 'ride';
 
-  const handleReady = useCallback((engine: RideEngine | null) => {
-    engineRef.current = engine;
-    setWorld(engine ? engine.world : null);
+  useEffect(() => subscribeTouchUi(setTouchUi), []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('touch-ui', touchUi);
+    document.body.classList.toggle('touch-ui', touchUi);
+    document.documentElement.classList.toggle('riding', started);
+    document.body.classList.toggle('riding', started);
+  }, [touchUi, started]);
+
+  const handleReady = useCallback((eng: RideEngine | null) => {
+    engineRef.current = eng;
+    setEngine(eng);
+    setWorld(eng ? eng.world : null);
   }, []);
 
   useEffect(() => {
@@ -81,6 +95,8 @@ export default function App() {
   const handleChangeScene = useCallback(() => {
     setConfig(null);
     setWorld(null);
+    setEngine(null);
+    engineRef.current = null;
     setCountryId(null);
     setPhase('globe');
   }, []);
@@ -120,6 +136,10 @@ export default function App() {
           onToggleHelp={() => setHelpVisible((v) => !v)}
           onChangeScene={handleChangeScene}
         />
+      )}
+
+      {started && touchUi && (
+        <TouchControls engine={engine} />
       )}
 
       <div id="toast" className={toast ? 'show' : ''}>{toast}</div>

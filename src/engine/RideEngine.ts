@@ -9,6 +9,7 @@ import { CoastBoats } from './CoastBoats';
 import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT } from './constants';
 import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
+import { greeterWelcomeMessage } from './ethnic';
 
 export interface EngineCallbacks {
   onStats: (s: Stats) => void;
@@ -18,6 +19,14 @@ export interface EngineCallbacks {
 }
 
 export type EngineOptions = RideConfig;
+
+/** Parallel touch state merged with keyboard in the update loop. */
+export interface TouchInput {
+  left: boolean;
+  right: boolean;
+  accel: boolean;
+  brake: boolean;
+}
 
 /**
  * 骑行引擎：持有 Three.js 场景、游戏状态与渲染循环。
@@ -58,6 +67,7 @@ export class RideEngine {
   private lastPY = 0;
 
   private keys = new Set<string>();
+  private touch: TouchInput = { left: false, right: false, accel: false, brake: false };
   private clock = new THREE.Clock();
   private raf = 0;
   private hudAcc = 0;
@@ -76,6 +86,7 @@ export class RideEngine {
     const characterId: CharacterId = options.characterId ?? 'male';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    canvas.style.touchAction = 'none';
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
@@ -112,6 +123,13 @@ export class RideEngine {
 
   /* ---------------- 对外 API ---------------- */
   setStarted(v: boolean): void { this.started = v; }
+
+  setTouchInput(input: Partial<TouchInput>): void {
+    if (input.left !== undefined) this.touch.left = input.left;
+    if (input.right !== undefined) this.touch.right = input.right;
+    if (input.accel !== undefined) this.touch.accel = input.accel;
+    if (input.brake !== undefined) this.touch.brake = input.brake;
+  }
 
   setTimeOfDay(name: TimeOfDay): void {
     this.sky.setTimeOfDay(name);
@@ -184,7 +202,10 @@ export class RideEngine {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => { this.keys.delete(e.code); };
-  private onBlur = (): void => { this.keys.clear(); };
+  private onBlur = (): void => {
+    this.keys.clear();
+    this.touch = { left: false, right: false, accel: false, brake: false };
+  };
 
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -283,8 +304,8 @@ export class RideEngine {
 
     // ---- 速度 ----
     if (this.started) {
-      const up = this.keys.has('KeyW') || this.keys.has('ArrowUp');
-      const down = this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.keys.has('Space');
+      const up = this.keys.has('KeyW') || this.keys.has('ArrowUp') || this.touch.accel;
+      const down = this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.keys.has('Space') || this.touch.brake;
       let target = CRUISE;
       if (up) target = SPRINT;
       if (down) target = Math.min(target, BRAKE_MIN);
@@ -292,8 +313,8 @@ export class RideEngine {
       const diff = target - this.speed;
       this.speed += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
 
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) this.latTarget = Math.max(-MAX_LAT, this.latTarget - 5.5 * dt);
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) this.latTarget = Math.min(MAX_LAT, this.latTarget + 5.5 * dt);
+      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.touch.left) this.latTarget = Math.max(-MAX_LAT, this.latTarget - 5.5 * dt);
+      if (this.keys.has('KeyD') || this.keys.has('ArrowRight') || this.touch.right) this.latTarget = Math.min(MAX_LAT, this.latTarget + 5.5 * dt);
       this.latTarget *= Math.pow(0.55, dt);
       this.time += dt;
       if (this.hitSlow > 0) {
@@ -354,7 +375,8 @@ export class RideEngine {
       const poi = nd < 85 ? nearest : null;
       if (poi && nd < 42 && !this.seen.has(poi.id)) {
         this.seen.add(poi.id);
-        this.cb.onToast(`发现新景点 · ${poi.name}`);
+        const welcome = greeterWelcomeMessage(this.world.packId, poi);
+        this.cb.onToast(welcome ?? `发现新景点 · ${poi.name}`);
       }
       this.cb.onStats({
         speed: this.speed,

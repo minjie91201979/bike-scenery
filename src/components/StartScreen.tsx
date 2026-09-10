@@ -6,6 +6,7 @@ import {
   type CountryId,
   type RideConfig,
 } from '../engine/scenes';
+import { requestAppFullscreen } from '../utils/fullscreen';
 
 interface Props {
   countryId: CountryId;
@@ -17,6 +18,12 @@ export function StartScreen({ countryId, onStart, onBack }: Props) {
   const [characterId, setCharacterId] = useState<CharacterId>('male');
   const scene = getScene(countryId);
   const character = CHARACTERS.find((c) => c.id === characterId)!;
+
+  const handleStart = () => {
+    // Same user gesture — request fullscreen (iOS may ignore; HUD 全屏 button remains)
+    void requestAppFullscreen(document.documentElement);
+    onStart({ sceneId: countryId, characterId });
+  };
 
   return (
     <div id="start">
@@ -68,13 +75,18 @@ export function StartScreen({ countryId, onStart, onBack }: Props) {
           <div className="keycap"><b>C</b> 视角</div>
           <div className="keycap"><b>F</b> 拍照留念</div>
         </div>
-        <button
-          id="btn-start"
-          type="button"
-          onClick={() => onStart({ sceneId: countryId, characterId })}
-        >
-          开始漫游
-        </button>
+        <div className="start-actions">
+          <button
+            type="button"
+            className="btn-fullscreen-start"
+            onClick={() => { void requestAppFullscreen(document.documentElement); }}
+          >
+            全屏
+          </button>
+          <button id="btn-start" type="button" onClick={handleStart}>
+            开始漫游
+          </button>
+        </div>
         <div id="loading">React 18 · TypeScript · Three.js</div>
       </div>
     </div>
