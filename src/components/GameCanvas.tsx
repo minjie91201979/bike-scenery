@@ -23,7 +23,9 @@ export function GameCanvas(props: Props) {
       onStats: (s) => cbRef.current.onStats(s),
       onCamChange: (m) => cbRef.current.onCamChange(m),
       onTimeChange: (t) => cbRef.current.onTimeChange(t),
-      onToast: (m) => cbRef.current.onToast(m),
+      onDiscover: (ev) => cbRef.current.onDiscover(ev),
+      onWarn: (m) => cbRef.current.onWarn(m),
+      onSystem: (m) => cbRef.current.onSystem(m),
     }, props.config);
     engineRef.current = engine;
     cbRef.current.onReady(engine);

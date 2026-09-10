@@ -30,3 +30,7 @@ pnpm-debug.log*
 
 # temp debug screenshots
 .react_*.png
+
+# local env
+.env
+

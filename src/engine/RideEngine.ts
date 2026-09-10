@@ -1,4 +1,4 @@
-﻿import * as THREE from 'three';
+import * as THREE from 'three';
 import { World } from './World';
 import { Sky } from './Sky';
 import { Bike } from './Bike';
@@ -6,16 +6,32 @@ import { Scatter, buildPois, type Animatable } from './Props';
 import { Wildlife } from './Wildlife';
 import { SkyBirds } from './Birds';
 import { CoastBoats } from './CoastBoats';
-import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT } from './constants';
+import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT, REST_EPS } from './constants';
 import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
 import { greeterWelcomeMessage } from './ethnic';
+import { rideAudio } from '../utils/rideAudio';
+import { savePngBlob, triggerShutterFlash } from '../utils/photoSave';
+
+/** 首次发现景点（足迹 / 印章） */
+export interface DiscoverEvent {
+  poiId: number;
+  poiName: string;
+  countryName: string;
+  welcome: string | null;
+  stampIndex: number;
+}
 
 export interface EngineCallbacks {
   onStats: (s: Stats) => void;
   onCamChange: (m: CamMode) => void;
   onTimeChange: (t: TimeOfDay) => void;
-  onToast: (msg: string) => void;
+  /** 发现地标 / 迎客 — 独立车道，约 3s */
+  onDiscover: (ev: DiscoverEvent) => void;
+  /** 野生动物提醒 */
+  onWarn: (msg: string) => void;
+  /** 拍照、杂项系统提示 */
+  onSystem: (msg: string) => void;
 }
 
 export type EngineOptions = RideConfig;
@@ -50,6 +66,8 @@ export class RideEngine {
   private hitSlow = 0;
   private hitIframe = 0;
   private cb: EngineCallbacks;
+  private countryName: string;
+  private shotBusy = false;
 
   private started = false;
   private speed = 0;
@@ -83,6 +101,7 @@ export class RideEngine {
     this.cb = cb;
 
     const scenePack = getScene(options.sceneId);
+    this.countryName = scenePack.name;
     const characterId: CharacterId = options.characterId ?? 'male';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -122,7 +141,11 @@ export class RideEngine {
   }
 
   /* ---------------- 对外 API ---------------- */
-  setStarted(v: boolean): void { this.started = v; }
+  setStarted(v: boolean): void {
+    this.started = v;
+    // 刚进入场景即缓缓上路；之后仍可用刹车真正停住看风景
+    if (v && this.speed < REST_EPS) this.speed = CRUISE;
+  }
 
   setTouchInput(input: Partial<TouchInput>): void {
     if (input.left !== undefined) this.touch.left = input.left;
@@ -148,15 +171,34 @@ export class RideEngine {
   }
 
   screenshot(): void {
-    this.canvas.toBlob((blob) => {
-      if (!blob) return;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `scenery-ride-${Date.now()}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      this.cb.onToast('照片已保存到下载目录');
-    }, 'image/png');
+    if (this.shotBusy || this.disposed) return;
+    this.shotBusy = true;
+    rideAudio.unlock();
+    rideAudio.play('shutter');
+    triggerShutterFlash();
+
+    const finish = (ok: boolean, msg: string) => {
+      this.shotBusy = false;
+      this.cb.onSystem(msg);
+      if (!ok) {
+        // keep honest — already messaged
+      }
+    };
+
+    try {
+      this.canvas.toBlob((blob) => {
+        if (!blob) {
+          finish(false, '拍照失败，画面未能导出');
+          return;
+        }
+        const name = `scenery-ride-${Date.now()}.png`;
+        void savePngBlob(blob, name).then((ok) => {
+          finish(ok, ok ? '照片已保存' : '未能保存照片，请检查浏览器下载权限');
+        });
+      }, 'image/png');
+    } catch {
+      finish(false, '拍照失败，请再试一次');
+    }
   }
 
   dispose(): void {
@@ -188,6 +230,7 @@ export class RideEngine {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return;
+    rideAudio.unlock();
     this.keys.add(e.code);
     if (e.code === 'KeyC') this.cycleCam();
     if (e.code === 'KeyF') this.screenshot();
@@ -214,6 +257,7 @@ export class RideEngine {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
+    rideAudio.unlock();
     this.dragging = true;
     this.lastPX = e.clientX;
     this.lastPY = e.clientY;
@@ -302,16 +346,29 @@ export class RideEngine {
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
 
-    // ---- 速度 ----
+    // ---- 速度：可真正停稳；缓行中松开油门保留轻巡航；刹车到 0 ----
     if (this.started) {
       const up = this.keys.has('KeyW') || this.keys.has('ArrowUp') || this.touch.accel;
       const down = this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.keys.has('Space') || this.touch.brake;
-      let target = CRUISE;
-      if (up) target = SPRINT;
-      if (down) target = Math.min(target, BRAKE_MIN);
-      const rate = target > this.speed ? 3.6 : 7.5;
-      const diff = target - this.speed;
-      this.speed += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
+      let target: number;
+      if (down) {
+        target = BRAKE_MIN; // 0
+      } else if (up) {
+        target = SPRINT;
+      } else if (this.speed > REST_EPS) {
+        // 已在路上：轻巡航，不必一直踩油门
+        target = CRUISE;
+      } else {
+        // 停稳后不再被拉回巡航 —— 慢慢看风景
+        target = 0;
+        this.speed = 0;
+      }
+      if (!(target === 0 && this.speed === 0)) {
+        const rate = target > this.speed ? 3.6 : (down ? 9.5 : 7.5);
+        const diff = target - this.speed;
+        this.speed += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
+        if (down && this.speed < REST_EPS) this.speed = 0;
+      }
 
       if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.touch.left) this.latTarget = Math.max(-MAX_LAT, this.latTarget - 5.5 * dt);
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight') || this.touch.right) this.latTarget = Math.min(MAX_LAT, this.latTarget + 5.5 * dt);
@@ -319,7 +376,7 @@ export class RideEngine {
       this.time += dt;
       if (this.hitSlow > 0) {
         this.hitSlow -= dt;
-        this.speed = Math.min(this.speed, BRAKE_MIN * 0.55);
+        this.speed = Math.min(this.speed, Math.max(BRAKE_MIN, 1.1));
       }
       if (this.hitIframe > 0) this.hitIframe -= dt;
     }
@@ -356,7 +413,8 @@ export class RideEngine {
     const hit = this.wildlife.update(dt, bikePos, pose.right, pose.tan, this.speed);
     if (hit && this.started && this.hitIframe <= 0) {
       this.hitIframe = 2.4;
-      this.cb.onToast(hit.msg);
+      rideAudio.play('warn');
+      this.cb.onWarn(hit.msg);
     }
 
     this.updateCamera(dt, bikePos);
@@ -376,7 +434,14 @@ export class RideEngine {
       if (poi && nd < 42 && !this.seen.has(poi.id)) {
         this.seen.add(poi.id);
         const welcome = greeterWelcomeMessage(this.world.packId, poi);
-        this.cb.onToast(welcome ?? `发现新景点 · ${poi.name}`);
+        rideAudio.play('discover');
+        this.cb.onDiscover({
+          poiId: poi.id,
+          poiName: poi.name,
+          countryName: this.countryName,
+          welcome,
+          stampIndex: this.seen.size,
+        });
       }
       this.cb.onStats({
         speed: this.speed,

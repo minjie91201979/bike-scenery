@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { CamMode, Stats, TimeOfDay } from '../engine/types';
+import { SPEED_BAR_MAX_KMH } from '../engine/constants';
 import { Minimap } from './Minimap';
 import type { World } from '../engine/World';
 import { isTouchUi, subscribeTouchUi } from '../utils/touchUi';
 import { isAppFullscreen, toggleAppFullscreen } from '../utils/fullscreen';
+import { rideAudio } from '../utils/rideAudio';
 
 interface Props {
   stats: Stats;
@@ -12,11 +14,13 @@ interface Props {
   world: World | null;
   sceneName: string;
   helpVisible: boolean;
+  muted: boolean;
   onCam: (m: CamMode) => void;
   onTime: (t: TimeOfDay) => void;
   onShot: () => void;
   onToggleHelp: () => void;
   onChangeScene: () => void;
+  onToggleMute: () => void;
 }
 
 const TIMES: { key: TimeOfDay; label: string }[] = [
@@ -32,8 +36,8 @@ const CAMS: { key: CamMode; label: string }[] = [
 ];
 
 export function Hud({
-  stats, cam, timeOfDay, world, sceneName, helpVisible,
-  onCam, onTime, onShot, onToggleHelp, onChangeScene
+  stats, cam, timeOfDay, world, sceneName, helpVisible, muted,
+  onCam, onTime, onShot, onToggleHelp, onChangeScene, onToggleMute,
 }: Props) {
   const kmh = stats.speed * 3.6;
   const mm = Math.floor(stats.time / 60);
@@ -64,14 +68,16 @@ export function Hud({
 
   return (
     <div className={`hud${touchUi ? ' hud-touch' : ''}${menuOpen ? ' hud-menu-open' : ''}`}>
-      {/* 左上：速度 / 里程 */}
       <div id="dash" className="panel">
         <div className="speed-row">
           <span id="speed">{Math.round(kmh)}</span>
           <span className="unit">km/h</span>
         </div>
         <div id="speed-bar">
-          <div id="speed-fill" style={{ width: `${Math.min(100, (kmh / 65) * 100)}%` }} />
+          <div
+            id="speed-fill"
+            style={{ width: `${Math.min(100, (kmh / SPEED_BAR_MAX_KMH) * 100)}%` }}
+          />
         </div>
         <div className="stats">
           <div className="stat">
@@ -85,31 +91,75 @@ export function Hud({
             </span>
           </div>
           <div className="stat">
-            <span className="stat-label">景点</span>
+            <span className="stat-label">足迹</span>
             <span className="stat-value">{stats.seen}/{stats.total}</span>
           </div>
         </div>
       </div>
 
-      {/* 右上：控制 */}
       <div id="tools">
         <div className="btn-group panel hud-essential-tools">
           <button
             type="button"
-            className={`btn${fs ? ' active' : ''}`}
+            className={`btn icon-btn tool-icon${fs ? ' active' : ''}`}
             title="全屏"
+            aria-label="全屏"
             onClick={handleFullscreen}
           >
-            全屏
+            {fs ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className={`btn icon-btn tool-icon${muted ? ' active' : ''}`}
+            title={muted ? '取消静音' : '静音'}
+            aria-label={muted ? '取消静音' : '静音'}
+            onClick={() => {
+              rideAudio.unlock();
+              onToggleMute();
+            }}
+          >
+            {muted ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              </svg>
+            )}
           </button>
           {touchUi && (
             <button
               type="button"
-              className={`btn${menuOpen ? ' active' : ''}`}
+              className={`btn icon-btn tool-icon${menuOpen ? ' active' : ''}`}
               title="菜单"
+              aria-label="菜单"
+              aria-expanded={menuOpen}
               onClick={() => setMenuOpen((v) => !v)}
             >
-              菜单
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <line x1="4" y1="7" x2="20" y2="7" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="17" x2="20" y2="17" />
+              </svg>
             </button>
           )}
         </div>
@@ -169,7 +219,6 @@ export function Hud({
         </div>
       </div>
 
-      {/* 底部：景点卡片 */}
       <div id="poi-card" className={`panel${stats.poi ? ' show' : ''}`}>
         <div id="poi-dot">{String(stats.poi?.id ?? 0).padStart(2, '0')}</div>
         <div id="poi-text">
@@ -181,15 +230,14 @@ export function Hud({
         </div>
       </div>
 
-      {/* 左下：操作提示 */}
       <div id="help" className={`panel${helpVisible && !(touchUi && !menuOpen) ? '' : ' hidden'}`}>
         <div className="title">操作指南</div>
-        <div><span className="k">W</span><span className="k">↑</span> 加速 · <span className="k">S</span><span className="k">↓</span> 减速</div>
+        <div><span className="k">W</span><span className="k">↑</span> 加速 · <span className="k">S</span><span className="k">↓</span> 刹车停住</div>
         <div><span className="k">A</span><span className="k">D</span> 左右换道</div>
         <div><span className="k">C</span> 切换视角 · <span className="k">F</span> 拍照</div>
         <div><span className="k">H</span> 隐藏提示 · <span className="k">1</span><span className="k">2</span><span className="k">3</span> 时段</div>
         <div><span className="k">Esc</span> 返回地球切换场景</div>
-        <div style={{ marginTop: 6, opacity: 0.75 }}>拖动鼠标可自由环视 · 触屏用虚拟按键骑行</div>
+        <div style={{ marginTop: 6, opacity: 0.75 }}>松开油门可轻巡航；刹车可完全停住看风景</div>
       </div>
     </div>
   );

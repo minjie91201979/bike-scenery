@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RideEngine, TouchInput } from '../engine/RideEngine';
+import { rideAudio } from '../utils/rideAudio';
 
 interface Props {
   engine: RideEngine | null;
@@ -65,6 +66,7 @@ export function TouchControls({ engine }: Props) {
   const onLeftStart = (e: React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    rideAudio.unlock();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       if (leftId.current === null) {
@@ -111,6 +113,7 @@ export function TouchControls({ engine }: Props) {
     onTouchStart: (e: React.TouchEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      rideAudio.unlock();
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
         if (idRef.current === null) {
@@ -178,9 +181,7 @@ export function TouchControls({ engine }: Props) {
           id="touch-brake"
           className={`touch-btn brake${s.brake ? ' pressed' : ''}`}
           {...brakeBind}
-        >
-          刹
-        </button>
+        >停</button>
         <button
           type="button"
           id="touch-accel"
@@ -193,3 +194,4 @@ export function TouchControls({ engine }: Props) {
     </div>
   );
 }
+
