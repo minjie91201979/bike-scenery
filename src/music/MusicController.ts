@@ -1,5 +1,6 @@
 ﻿import type { MusicProvider } from './providers/types';
 import type { MusicState, RecommendContext, Track } from './types';
+import { toPlayableSrc } from './weapi';
 
 const LS_VOLUME = 'bike-scenery-music-volume';
 const LS_MUTED = 'bike-scenery-music-muted';
@@ -46,12 +47,12 @@ export class MusicController {
   private recommendLoaded = false;
   private loadToken = 0;
   private urlRetryUsed = false;
+  private objectUrl: string | null = null;
 
   constructor(provider: MusicProvider) {
     this.provider = provider;
     this.audio = new Audio();
     this.audio.preload = 'metadata';
-    this.audio.crossOrigin = 'anonymous';
     this.applyGain();
 
     this.audio.addEventListener('ended', () => {
@@ -291,7 +292,19 @@ export class MusicController {
   }
 
 
-  /** On media error, re-resolve URL once (CDN links expire ~20min). */
+  private revokeObjectUrl(): void {
+    if (!this.objectUrl) return;
+    URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = null;
+  }
+  private async assignSrc(remoteUrl: string): Promise<void> {
+    this.revokeObjectUrl();
+    const src = await toPlayableSrc(remoteUrl);
+    if (src.startsWith('blob:')) this.objectUrl = src;
+    this.audio.src = src;
+    this.applyGain();
+  }
+
   private async handleAudioError(): Promise<void> {
     const track = this.index >= 0 ? this.queue[this.index] ?? null : null;
     if (track && !this.urlRetryUsed) {
@@ -299,8 +312,7 @@ export class MusicController {
       try {
         const url = await this.provider.resolvePlayable(track);
         if (url) {
-          this.audio.src = url;
-          this.applyGain();
+          await this.assignSrc(url);
           await this.audio.play();
           this.playing = true;
           this.error = null;
@@ -339,8 +351,7 @@ export class MusicController {
         }
         return;
       }
-      this.audio.src = url;
-      this.applyGain();
+      await this.assignSrc(url);
       try {
         await this.audio.play();
         if (token !== this.loadToken) return;
@@ -369,6 +380,7 @@ export class MusicController {
     window.clearTimeout(this.duckTimer);
     this.audio.pause();
     this.audio.removeAttribute('src');
+    this.revokeObjectUrl();
     this.listeners.clear();
   }
 }

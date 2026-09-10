@@ -8,10 +8,14 @@ export default defineConfig({
     host: true,
     port: 5180,
     proxy: {
-      '/ncm': {
-        target: 'http://127.0.0.1:3000',
+      // Browser CORS: same-origin /weapi → music.163.com (no local Node API).
+      '/weapi': {
+        target: 'https://music.163.com',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/ncm/, ''),
+        headers: {
+          referer: 'https://music.163.com/',
+          origin: 'https://music.163.com',
+        },
       },
     },
   },

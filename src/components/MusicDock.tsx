@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createMusicController, type MusicController, type MusicState } from '../music';
 import { MusicMiniBar } from './MusicMiniBar';
 import { MusicPanel } from './MusicPanel';
+import { observeHudRailSize } from '../utils/hudRail';
 
 interface Props {
   sceneId?: string;
@@ -29,6 +30,7 @@ export function MusicDock({ sceneId, active, onFeedback }: Props) {
   const [controller] = useState<MusicController>(() => createMusicController());
   const [state, setState] = useState<MusicState>(INITIAL);
   const [panelOpen, setPanelOpen] = useState(false);
+  const miniRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => controller.subscribe(setState), [controller]);
 
@@ -61,17 +63,24 @@ export function MusicDock({ sceneId, active, onFeedback }: Props) {
 
   useEffect(() => () => controller.dispose(), [controller]);
 
+  useEffect(() => {
+    if (!active) return;
+    return observeHudRailSize(miniRef.current, '--hud-music-h');
+  }, [active]);
+
   if (!active) return null;
 
   return (
     <div id="music-dock" className="music-dock">
-      <MusicMiniBar
-        state={state}
-        onTogglePlay={() => {
-          void controller.togglePlay();
-        }}
-        onOpenPanel={() => setPanelOpen(true)}
-      />
+      <div ref={miniRef}>
+        <MusicMiniBar
+          state={state}
+          onTogglePlay={() => {
+            void controller.togglePlay();
+          }}
+          onOpenPanel={() => setPanelOpen(true)}
+        />
+      </div>
       <MusicPanel
         open={panelOpen}
         controller={controller}

@@ -1,5 +1,6 @@
 import type { Artist, Playlist, RecommendContext, SearchType, Track } from '../types';
 import { radioForScene } from '../recommendMap';
+import { weapiPost } from '../weapi';
 import type { MusicProvider } from './types';
 import { mockProvider } from './mockProvider';
 
@@ -9,49 +10,8 @@ const SEARCH_TYPE_CODE: Record<SearchType, number> = {
   playlist: 1000,
 };
 
-function baseUrl(): string {
-  const raw = (import.meta.env.VITE_MUSIC_API as string | undefined) ?? '';
-  return raw.replace(/\/$/, '').trim();
-}
-
-function friendlyApiError(pathname: string, status?: number, bodyCode?: number, bodyMsg?: string): Error {
-  if (bodyCode === -460 || String(bodyMsg ?? '').includes('-460')) {
-    return new Error('接口触发风控/降频，请稍后再试');
-  }
-  if (bodyMsg && bodyCode !== undefined && bodyCode !== 200) {
-    return new Error(bodyMsg);
-  }
-  if (status) return new Error(`曲库接口暂时不可用 (${pathname} ${status})`);
-  return new Error(`曲库接口暂时不可用 (${pathname})`);
-}
-
-async function apiGet<T = unknown>(
-  pathname: string,
-  params: Record<string, string | number | undefined> = {},
-): Promise<T> {
-  const base = baseUrl();
-  if (!base) throw new Error('NO_BASE');
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === '') continue;
-    qs.set(k, String(v));
-  }
-  const url = `${base}${pathname}${qs.toString() ? `?${qs}` : ''}`;
-  const res = await fetch(url, { credentials: 'omit' });
-  let json: { code?: number; msg?: string; message?: string } & T;
-  try {
-    json = (await res.json()) as typeof json;
-  } catch {
-    if (!res.ok) throw friendlyApiError(pathname, res.status);
-    throw friendlyApiError(pathname);
-  }
-  const code = json?.code;
-  if (code === -460) throw friendlyApiError(pathname, res.status, -460, json.msg ?? json.message);
-  if (!res.ok) throw friendlyApiError(pathname, res.status, code, json.msg ?? json.message);
-  if (typeof code === 'number' && code !== 200 && code !== 0) {
-    throw friendlyApiError(pathname, res.status, code, json.msg ?? json.message);
-  }
-  return json as T;
+function isNeteaseSongId(id: string): boolean {
+  return /^\d+$/.test(id);
 }
 
 function artistsFrom(raw: unknown): Artist[] {
@@ -130,25 +90,23 @@ function songsFromSearchResult(result: Record<string, unknown> | undefined): Son
 }
 
 async function withMockFallback<T>(fn: () => Promise<T>, mockFn: () => Promise<T>): Promise<T> {
-  if (!baseUrl()) return mockFn();
   try {
     return await fn();
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NO_BASE') return mockFn();
-    throw err;
+  } catch {
+    return mockFn();
   }
 }
 
 export function createNeteaseProxyProvider(): MusicProvider {
   return {
-    id: 'netease-proxy',
-    label: '内测曲库',
+    id: 'netease',
+    label: '网易云音乐',
 
     async search(keyword, type, limit = 20) {
       return withMockFallback(
         async () => {
           const params = {
-            keywords: keyword,
+            s: keyword,
             type: SEARCH_TYPE_CODE[type],
             limit,
             offset: 0,
@@ -158,9 +116,9 @@ export function createNeteaseProxyProvider(): MusicProvider {
             code?: number;
           };
           try {
-            data = await apiGet('/search', params);
+            data = await weapiPost('/api/search/get', params);
           } catch {
-            data = await apiGet('/cloudsearch', params);
+            data = await weapiPost('/api/cloudsearch/pc', { ...params, total: true });
           }
           const result = data.result ?? {};
           if (type === 'song') return songsFromSearchResult(result).map(mapSong);
@@ -215,9 +173,12 @@ export function createNeteaseProxyProvider(): MusicProvider {
 
           // 3) Hot playlists → first playlist tracks
           try {
-            const hot = await apiGet<{ playlists?: { id?: number | string }[] }>('/top/playlist', {
+            const hot = await weapiPost<{ playlists?: { id?: number | string }[] }>('/api/playlist/list', {
+              cat: '全部',
               order: 'hot',
               limit: 6,
+              offset: 0,
+              total: true,
             });
             const firstId = hot.playlists?.[0]?.id;
             if (firstId) {
@@ -229,7 +190,11 @@ export function createNeteaseProxyProvider(): MusicProvider {
           }
           // 4) Soft last try: /personalized (may work without cookie on some proxies)
           try {
-            const data = await apiGet<{ result?: { id?: number }[] }>('/personalized', { limit: 6 });
+            const data = await weapiPost<{ result?: { id?: number }[] }>('/api/personalized/playlist', {
+              limit: 6,
+              total: true,
+              n: 1000,
+            });
             const first = data.result?.[0]?.id;
             if (first) {
               const tracks = await this.playlistTracks(String(first), 30);
@@ -248,12 +213,12 @@ export function createNeteaseProxyProvider(): MusicProvider {
       return withMockFallback(
         async () => {
           try {
-            const data = await apiGet<{ songs?: SongLike[] }>('/artist/top/song', {
+            const data = await weapiPost<{ songs?: SongLike[] }>('/api/artist/top/song', {
               id: artistId,
             });
             return (data.songs ?? []).slice(0, limit).map(mapSong);
           } catch {
-            const data = await apiGet<{ hotSongs?: SongLike[] }>('/artists', { id: artistId });
+            const data = await weapiPost<{ hotSongs?: SongLike[] }>(`/api/v1/artist/${artistId}`, {});
             return (data.hotSongs ?? []).slice(0, limit).map(mapSong);
           }
         },
@@ -265,46 +230,59 @@ export function createNeteaseProxyProvider(): MusicProvider {
       return withMockFallback(
         async () => {
           try {
-            const data = await apiGet<{ songs?: SongLike[] }>('/playlist/track/all', {
+            const detail = await weapiPost<{
+              playlist?: { trackIds?: { id?: number }[]; tracks?: SongLike[] };
+            }>('/api/v6/playlist/detail', {
               id: playlistId,
-              limit,
-              offset: 0,
+              n: 100000,
+              s: 8,
             });
-            if (Array.isArray(data.songs) && data.songs.length) {
-              return data.songs.slice(0, limit).map(mapSong);
+            const trackIds = detail.playlist?.trackIds ?? [];
+            if (trackIds.length) {
+              const slice = trackIds.slice(0, limit);
+              const songs = await weapiPost<{ songs?: SongLike[] }>('/api/v3/song/detail', {
+                c: `[${slice.map((item) => `{"id":${item.id}}`).join(',')}]`,
+              });
+              if (Array.isArray(songs.songs) && songs.songs.length) {
+                return songs.songs.slice(0, limit).map(mapSong);
+              }
             }
+            return (detail.playlist?.tracks ?? []).slice(0, limit).map(mapSong);
           } catch {
-            /* fall through to detail */
+            const data = await weapiPost<{
+              playlist?: { tracks?: SongLike[] };
+            }>('/api/v6/playlist/detail', { id: playlistId, n: 100000, s: 8 });
+            return (data.playlist?.tracks ?? []).slice(0, limit).map(mapSong);
           }
-          const data = await apiGet<{
-            playlist?: { tracks?: SongLike[] };
-          }>('/playlist/detail', { id: playlistId });
-          return (data.playlist?.tracks ?? []).slice(0, limit).map(mapSong);
         },
         () => mockProvider.playlistTracks(playlistId, limit),
       );
     },
 
     async resolvePlayable(track) {
-      return withMockFallback(
-        async () => {
-          const id = track.sourceId || track.id;
-          // Optional availability check — ignore failures, still try URL
-          try {
-            await apiGet('/check/music', { id });
-          } catch {
-            /* proceed */
-          }
-          // Always resolve fresh — do NOT cache URL (expires ~20min)
-          const data = await apiGet<{
-            data?: { url?: string | null; code?: number }[];
-          }>('/song/url/v1', { id, level: 'exhigh' });
-          const url = data.data?.[0]?.url;
-          if (!url) return null;
-          return url;
-        },
-        () => mockProvider.resolvePlayable(track),
-      );
+      const id = String(track.sourceId || track.id);
+      if (!isNeteaseSongId(id)) return mockProvider.resolvePlayable(track);
+      try {
+        const data = await weapiPost<{
+          data?: { url?: string | null; code?: number }[];
+        }>('/api/song/enhance/player/url/v1', {
+          ids: `[${id}]`,
+          level: 'standard',
+          encodeType: 'mp3',
+        });
+        const url = data.data?.[0]?.url;
+        if (url) return url;
+        const hi = await weapiPost<{
+          data?: { url?: string | null; code?: number }[];
+        }>('/api/song/enhance/player/url/v1', {
+          ids: `[${id}]`,
+          level: 'exhigh',
+          encodeType: 'flac',
+        });
+        return hi.data?.[0]?.url ?? null;
+      } catch {
+        return null;
+      }
     },
   };
 }

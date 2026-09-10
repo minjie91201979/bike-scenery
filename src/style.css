@@ -788,9 +788,13 @@ html.touch-ui body.riding {
   --hud-rail-top: max(8px, env(safe-area-inset-top));
   --hud-rail-width: min(200px, 42vw);
   --hud-rail-gap: 8px;
-  --hud-dash-music-gap: 16px;
-  --hud-dash-h: 56px;
-  --hud-music-h: 48px;
+  --hud-dash-h: 64px;
+  --hud-music-h: 44px;
+}
+
+body.touch-ui.riding #dash .stats,
+html.touch-ui body.riding #dash .stats {
+  display: none;
 }
 
 body.touch-ui.riding #dash,
@@ -807,11 +811,16 @@ html.touch-ui body.riding #dash {
 body.touch-ui.riding .music-dock,
 html.touch-ui body.riding .music-dock {
   left: var(--hud-rail-left) !important;
-  top: calc(var(--hud-rail-top) + var(--hud-dash-h) + var(--hud-dash-music-gap, 14px)) !important;
+  top: calc(var(--hud-rail-top) + var(--hud-dash-h) + var(--hud-rail-gap)) !important;
   bottom: auto !important;
   right: auto !important;
   width: var(--hud-rail-width);
   transform: none !important;
+}
+
+body.touch-ui.riding .music-dock > div:first-child,
+html.touch-ui body.riding .music-dock > div:first-child {
+  width: 100%;
 }
 
 body.touch-ui.riding .music-mini,
@@ -847,7 +856,7 @@ html.touch-ui body.riding .music-play-btn {
 body.touch-ui.riding #footprint-book,
 html.touch-ui body.riding #footprint-book {
   left: var(--hud-rail-left) !important;
-  top: calc(var(--hud-rail-top) + var(--hud-dash-h) + var(--hud-dash-music-gap, 14px) + var(--hud-music-h) + var(--hud-rail-gap)) !important;
+  top: calc(var(--hud-rail-top) + var(--hud-dash-h) + var(--hud-music-h) + var(--hud-rail-gap) * 2) !important;
   bottom: auto !important;
   width: var(--hud-rail-width);
   min-width: 0 !important;
@@ -860,10 +869,7 @@ html.touch-ui body.riding #footprint-book {
   body.touch-ui.riding,
   html.touch-ui body.riding {
     --hud-rail-width: min(188px, 36vw);
-    --hud-dash-h: 52px;
-    --hud-music-h: 44px;
-    --hud-rail-gap: 6px;
-    --hud-dash-music-gap: 14px;
+    --hud-rail-gap: 8px;
   }
   .music-panel-backdrop { align-items: center; justify-content: center; }
 }
@@ -871,8 +877,7 @@ html.touch-ui body.riding #footprint-book {
 @media (pointer: coarse) and (orientation: portrait) {
   body.touch-ui.riding,
   html.touch-ui body.riding {
-    --hud-rail-width: min(210px, 58vw);
-    --hud-dash-h: 56px;
-    --hud-music-h: 48px;
+    --hud-rail-width: min(200px, 54vw);
+    --hud-rail-gap: 8px;
   }
 }

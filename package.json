@@ -8,18 +8,21 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "cap:sync": "npm run build && npx cap sync android",
+    "cap:sync": "npm run build && npx cap sync android && node scripts/sync-android-icons.mjs",
     "cap:android": "npx cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "crypto-js": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.170.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.1",
+    "@types/crypto-js": "^4.2.2",
+    "@types/node": "^22.20.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.170.0",

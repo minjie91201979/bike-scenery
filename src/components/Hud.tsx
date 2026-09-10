@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CamMode, Stats, TimeOfDay } from '../engine/types';
 import { SPEED_BAR_MAX_KMH } from '../engine/constants';
 import { Minimap } from './Minimap';
@@ -6,6 +6,7 @@ import type { World } from '../engine/World';
 import { isTouchUi, subscribeTouchUi } from '../utils/touchUi';
 import { isAppFullscreen, toggleAppFullscreen } from '../utils/fullscreen';
 import { rideAudio } from '../utils/rideAudio';
+import { observeHudRailSize } from '../utils/hudRail';
 
 interface Props {
   stats: Stats;
@@ -45,8 +46,14 @@ export function Hud({
   const [touchUi, setTouchUi] = useState(() => isTouchUi());
   const [menuOpen, setMenuOpen] = useState(false);
   const [fs, setFs] = useState(() => isAppFullscreen());
+  const dashRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => subscribeTouchUi(setTouchUi), []);
+
+  useEffect(() => {
+    if (!touchUi) return;
+    return observeHudRailSize(dashRef.current, '--hud-dash-h');
+  }, [touchUi]);
 
   useEffect(() => {
     const sync = () => setFs(isAppFullscreen());
@@ -68,7 +75,7 @@ export function Hud({
 
   return (
     <div className={`hud${touchUi ? ' hud-touch' : ''}${menuOpen ? ' hud-menu-open' : ''}`}>
-      <div id="dash" className="panel">
+      <div id="dash" ref={dashRef} className="panel">
         <div className="speed-row">
           <span id="speed">{Math.round(kmh)}</span>
           <span className="unit">km/h</span>
