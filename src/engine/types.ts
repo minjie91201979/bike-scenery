@@ -258,4 +258,6 @@ export interface Stats {
   x: number;          // 玩家世界坐标（小地图用）
   z: number;
   yaw: number;
+  /** 当前座驾冲刺上限 m/s，HUD 速度条按此填满 */
+  speedCap: number;
 }

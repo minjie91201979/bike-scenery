@@ -34,7 +34,7 @@ export function StartScreen({ countryId, onStart, onBack }: Props) {
         <div className="tag">Scenery Ride · 3D</div>
         <h1>漫游骑行</h1>
         <p className="sub">
-          已选择 <b>{scene.name}</b>。挑选骑手后即可上路 ——
+          已选择 <b>{scene.name}</b>。选好角色后即可上路 ——
           不必赶路，慢一点，风景才看得清。
         </p>
 

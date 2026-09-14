@@ -4,7 +4,7 @@ import type { PoiDef } from './types';
 export type CountryId = 'china' | 'russia' | 'japan' | 'usa' | 'australia' | 'egypt' | 'india' | 'canada' | 'france' | 'brazil' | 'mexico' | 'uk' | 'korea' | 'italy' | 'turkey' | 'saudi' | 'south_africa';
 /** 场景 ID 即国家 ID（兼容旧 RideConfig.sceneId 字段名） */
 export type SceneId = CountryId;
-export type CharacterId = 'male' | 'female';
+export type CharacterId = 'male' | 'female' | 'moto' | 'rv' | 'sport';
 
 export interface CurveParams {
   baseRadius: number;
@@ -773,6 +773,9 @@ export interface RideConfig {
 export const CHARACTERS: { id: CharacterId; name: string; blurb: string }[] = [
   { id: 'male', name: '男骑手', blurb: '经典蓝车架与红盔，稳健匀称的体型。' },
   { id: 'female', name: '女骑手', blurb: '紫红骑行服与长发，身形更轻盈。' },
+  { id: 'moto', name: '摩托车', blurb: '轻盈双轮，过弯会侧倾，冲刺比单车更快。' },
+  { id: 'rv', name: '房车', blurb: '慢慢开、坐得高，适合把风景看仔细。' },
+  { id: 'sport', name: '跑车', blurb: '贴地四轮，松开刹车就能把路卷起来。' },
 ];
 
 /** 地球上可点击的国家热点（开放 + 未开放） */

@@ -6,12 +6,14 @@ import { Scatter, buildPois, type Animatable } from './Props';
 import { Wildlife } from './Wildlife';
 import { SkyBirds } from './Birds';
 import { CoastBoats } from './CoastBoats';
-import { CRUISE, SPRINT, BRAKE_MIN, MAX_LAT, REST_EPS } from './constants';
+import { SkyBalloons } from './Balloons';
+import { WindRings } from './WindRings';
+import { BRAKE_MIN, REST_EPS, vehicleProfile, type VehicleProfile } from './constants';
 import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
 import { greeterWelcomeMessage } from './ethnic';
 import { rideAudio } from '../utils/rideAudio';
-import { savePngBlob, triggerShutterFlash } from '../utils/photoSave';
+import { saveRidePhoto, triggerShutterFlash } from '../utils/photoSave';
 
 /** 首次发现景点（足迹 / 印章） */
 export interface DiscoverEvent {
@@ -61,10 +63,15 @@ export class RideEngine {
   private wildlife: Wildlife;
   private birds: SkyBirds;
   private boats: CoastBoats;
+  private balloons: SkyBalloons;
+  private rings: WindRings;
   private poiAnims: Animatable[] = [];
   private bike: Bike;
+  private vehicle: VehicleProfile;
   private hitSlow = 0;
   private hitIframe = 0;
+  private shake = 0;
+  private photoHintCd = 0;
   private cb: EngineCallbacks;
   private countryName: string;
   private shotBusy = false;
@@ -103,6 +110,7 @@ export class RideEngine {
     const scenePack = getScene(options.sceneId);
     this.countryName = scenePack.name;
     const characterId: CharacterId = options.characterId ?? 'male';
+    this.vehicle = vehicleProfile(characterId);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     canvas.style.touchAction = 'none';
@@ -121,6 +129,8 @@ export class RideEngine {
     this.wildlife = new Wildlife(this.scene, this.world);
     this.birds = new SkyBirds(this.scene, this.world);
     this.boats = new CoastBoats(this.scene, this.world);
+    this.balloons = new SkyBalloons(this.scene, this.world);
+    this.rings = new WindRings(this.scene, this.world);
     this.poiAnims = buildPois(this.scene, this.world);
 
     this.bike = new Bike(characterId);
@@ -129,7 +139,12 @@ export class RideEngine {
 
     // 初始相机直接落在车后，避免开局从原点飞入
     const p0 = this.world.poseAt(this.s);
-    this.camPos.set(p0.pos.x - p0.tan.x * 8.4, p0.pos.y + 3.3, p0.pos.z - p0.tan.z * 8.4);
+    const cam = this.vehicle;
+    this.camPos.set(
+      p0.pos.x - p0.tan.x * cam.followBack,
+      p0.pos.y + cam.followHeight,
+      p0.pos.z - p0.tan.z * cam.followBack,
+    );
     this.camLook.copy(p0.pos);
 
     this.world.update(this.s);
@@ -144,7 +159,7 @@ export class RideEngine {
   setStarted(v: boolean): void {
     this.started = v;
     // 刚进入场景即缓缓上路；之后仍可用刹车真正停住看风景
-    if (v && this.speed < REST_EPS) this.speed = CRUISE;
+    if (v && this.speed < REST_EPS) this.speed = this.vehicle.cruise;
   }
 
   setTouchInput(input: Partial<TouchInput>): void {
@@ -176,29 +191,53 @@ export class RideEngine {
     rideAudio.unlock();
     rideAudio.play('shutter');
     triggerShutterFlash();
+    const quest = this.photoQuestHint(this.bike.root.position) !== null;
 
-    const finish = (ok: boolean, msg: string) => {
+    const finish = (_ok: boolean, msg: string) => {
       this.shotBusy = false;
       this.cb.onSystem(msg);
-      if (!ok) {
-        // keep honest — already messaged
-      }
     };
 
     try {
-      this.canvas.toBlob((blob) => {
-        if (!blob) {
-          finish(false, '拍照失败，画面未能导出');
+      const dataUrl = this.canvas.toDataURL('image/png');
+      const name = `scenery-ride-${Date.now()}.png`;
+      void saveRidePhoto(dataUrl, name).then((res) => {
+        if (!res.ok) {
+          finish(false, '未保存到相册');
           return;
         }
-        const name = `scenery-ride-${Date.now()}.png`;
-        void savePngBlob(blob, name).then((ok) => {
-          finish(ok, ok ? '照片已保存' : '未能保存照片，请检查浏览器下载权限');
-        });
-      }, 'image/png');
+        const saved = quest
+          ? '咔嚓 —— 这一刻被你留下了。'
+          : res.dest === 'album'
+            ? '已保存到相册'
+            : res.dest === 'share'
+              ? '已交给系统，可选存到相册'
+              : '照片已保存';
+        finish(true, saved);
+      });
     } catch {
       finish(false, '拍照失败，请再试一次');
     }
+  }
+
+  /** 气球 > 动物 > 景点；有课题目标才给提示句 */
+  private photoQuestHint(player: THREE.Vector3): string | null {
+    const balloon = this.balloons.nearestDist(player);
+    if (balloon < 55) return '热气球近了。按 F 留下这一刻。';
+    const animal = this.wildlife.nearest(player);
+    if (animal && animal.dist < 16) return `${animal.label}就在旁边。按 F。`;
+    let nd = Infinity;
+    let name = '';
+    for (const poi of this.world.pois) {
+      const dx = player.x - poi.roadPos.x, dz = player.z - poi.roadPos.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < nd) {
+        nd = d;
+        name = poi.name;
+      }
+    }
+    if (nd < 50) return `${name}近了。按 F。`;
+    return null;
   }
 
   dispose(): void {
@@ -283,6 +322,7 @@ export class RideEngine {
     let targetLook: THREE.Vector3;
     let stiff = 0.0028;
 
+    const vcam = this.vehicle;
     if (this.camMode === 'follow') {
       if (!this.dragging) {
         this.orbitYaw *= Math.pow(0.12, dt);
@@ -290,30 +330,42 @@ export class RideEngine {
       }
       const yaw = this.orbitYaw;
       const cs = Math.cos(yaw), sn = Math.sin(yaw);
-      const bx = -this.fwd.x * 8.4, bz = -this.fwd.z * 8.4;
+      const bx = -this.fwd.x * vcam.followBack, bz = -this.fwd.z * vcam.followBack;
       targetPos = this.tmpA.set(
         bikePos.x + (bx * cs - bz * sn),
-        bikePos.y + 3.3 + this.orbitPitch * 9,
+        bikePos.y + vcam.followHeight + this.orbitPitch * 9,
         bikePos.z + (bx * sn + bz * cs)
       );
-      targetLook = this.tmpB.set(bikePos.x + this.fwd.x * 7, bikePos.y + 1.35, bikePos.z + this.fwd.z * 7);
+      targetLook = this.tmpB.set(
+        bikePos.x + this.fwd.x * 7,
+        bikePos.y + vcam.followLookY,
+        bikePos.z + this.fwd.z * 7,
+      );
       stiff = 0.004;
 
     } else if (this.camMode === 'cinema') {
       const t = performance.now() * 0.001;
       const a = t * 0.22;
-      const r = 7.2;
+      const r = vcam.cinemaR;
       targetPos = this.tmpA.set(
         bikePos.x + Math.cos(a) * r,
-        bikePos.y + 1.75 + Math.sin(t * 0.4) * 0.7,
+        bikePos.y + vcam.cinemaY + Math.sin(t * 0.4) * 0.7,
         bikePos.z + Math.sin(a) * r
       );
-      targetLook = this.tmpB.set(bikePos.x, bikePos.y + 1.15, bikePos.z);
+      targetLook = this.tmpB.set(bikePos.x, bikePos.y + vcam.followLookY * 0.85, bikePos.z);
       stiff = 0.05;
 
     } else { // fpv — 越过骑手头顶的第一人称（硬跟随）
-      targetPos = this.tmpA.set(bikePos.x + this.fwd.x * 1.15, bikePos.y + 1.60, bikePos.z + this.fwd.z * 1.15);
-      targetLook = this.tmpB.set(bikePos.x + this.fwd.x * 16, bikePos.y + 1.72, bikePos.z + this.fwd.z * 16);
+      targetPos = this.tmpA.set(
+        bikePos.x + this.fwd.x * vcam.fpvFwd,
+        bikePos.y + vcam.fpvY,
+        bikePos.z + this.fwd.z * vcam.fpvFwd,
+      );
+      targetLook = this.tmpB.set(
+        bikePos.x + this.fwd.x * 16,
+        bikePos.y + vcam.fpvLookY,
+        bikePos.z + this.fwd.z * 16,
+      );
       this.camPos.copy(targetPos);
       this.camLook.copy(targetLook);
       stiff = 1;
@@ -327,11 +379,19 @@ export class RideEngine {
     this.camPos.lerp(targetPos, k);
     this.camLook.lerp(targetLook, Math.min(1, k * 1.6));
 
-    const minY = bikePos.y + 0.9;
+    const minY = bikePos.y + this.vehicle.camMinY;
     if (this.camPos.y < minY) this.camPos.y = minY;
 
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
+
+    if (this.shake > 0) {
+      this.shake = Math.max(0, this.shake - dt * 2.4);
+      const amp = this.shake * this.shake;
+      const st = this.clock.elapsedTime;
+      this.camera.position.x += Math.sin(st * 41) * amp * 0.28;
+      this.camera.position.y += Math.cos(st * 33) * amp * 0.16;
+    }
 
     if (this.camMode === 'follow' && !this.dragging) {
       this.camera.rotation.z += this.bike.root.rotation.z * 0.22;
@@ -351,27 +411,28 @@ export class RideEngine {
       const up = this.keys.has('KeyW') || this.keys.has('ArrowUp') || this.touch.accel;
       const down = this.keys.has('KeyS') || this.keys.has('ArrowDown') || this.keys.has('Space') || this.touch.brake;
       let target: number;
+      const veh = this.vehicle;
       if (down) {
         target = BRAKE_MIN; // 0
       } else if (up) {
-        target = SPRINT;
+        target = veh.sprint;
       } else if (this.speed > REST_EPS) {
         // 已在路上：轻巡航，不必一直踩油门
-        target = CRUISE;
+        target = veh.cruise;
       } else {
         // 停稳后不再被拉回巡航 —— 慢慢看风景
         target = 0;
         this.speed = 0;
       }
       if (!(target === 0 && this.speed === 0)) {
-        const rate = target > this.speed ? 3.6 : (down ? 9.5 : 7.5);
+        const rate = target > this.speed ? veh.accel : (down ? veh.brakeRate : veh.coastRate);
         const diff = target - this.speed;
         this.speed += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
         if (down && this.speed < REST_EPS) this.speed = 0;
       }
 
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.touch.left) this.latTarget = Math.max(-MAX_LAT, this.latTarget - 5.5 * dt);
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight') || this.touch.right) this.latTarget = Math.min(MAX_LAT, this.latTarget + 5.5 * dt);
+      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.touch.left) this.latTarget = Math.max(-veh.maxLat, this.latTarget - 5.5 * dt);
+      if (this.keys.has('KeyD') || this.keys.has('ArrowRight') || this.touch.right) this.latTarget = Math.min(veh.maxLat, this.latTarget + 5.5 * dt);
       this.latTarget *= Math.pow(0.55, dt);
       this.time += dt;
       if (this.hitSlow > 0) {
@@ -379,6 +440,7 @@ export class RideEngine {
         this.speed = Math.min(this.speed, Math.max(BRAKE_MIN, 1.1));
       }
       if (this.hitIframe > 0) this.hitIframe -= dt;
+      this.photoHintCd -= dt;
     }
     this.lateral += (this.latTarget - this.lateral) * (1 - Math.pow(0.002, dt));
 
@@ -391,14 +453,14 @@ export class RideEngine {
     const bikePos = this.bike.root.position;
     bikePos.set(
       pose.pos.x + pose.right.x * this.lateral,
-      pose.pos.y + 0.055,
+      pose.pos.y + this.vehicle.groundY,
       pose.pos.z + pose.right.z * this.lateral
     );
 
     const steerVis = Math.max(-1, Math.min(1, (this.latTarget - this.lateral) * 0.9));
     this.bike.root.rotation.y = Math.atan2(pose.tan.x, pose.tan.z) + steerVis * -0.06;
     this.bike.root.rotation.x = -Math.asin(Math.max(-0.5, Math.min(0.5, pose.tan.y)));
-    this.bike.root.rotation.z += (-steerVis * 0.17 - this.bike.root.rotation.z) * Math.min(1, 8 * dt);
+    this.bike.root.rotation.z += (-steerVis * this.vehicle.lean - this.bike.root.rotation.z) * Math.min(1, 8 * dt);
     this.bike.update(dt, this.speed, steerVis, this.sky.night);
 
     // ---- 世界 ----
@@ -409,12 +471,28 @@ export class RideEngine {
 
     this.birds.update(dt, bikePos);
     this.boats.update(dt, bikePos, t);
+    this.balloons.update(dt, bikePos, t, this.sky.night);
 
-    const hit = this.wildlife.update(dt, bikePos, pose.right, pose.tan, this.speed);
-    if (hit && this.started && this.hitIframe <= 0) {
-      this.hitIframe = 2.4;
-      rideAudio.play('warn');
-      this.cb.onWarn(hit.msg);
+    const ev = this.wildlife.update(dt, bikePos, pose.right, pose.tan, this.speed, this.lateral);
+    if (ev && this.started) {
+      if (ev.event === 'hit' && this.hitIframe <= 0) {
+        this.hitIframe = 2.4;
+        this.hitSlow = Math.max(1.6, ev.knock);
+        this.shake = 0.48;
+        rideAudio.play('warn');
+        this.cb.onWarn(ev.msg);
+      } else if (ev.event === 'dodge' || ev.event === 'escort-ok') {
+        rideAudio.play('chime');
+        this.cb.onSystem(ev.msg);
+      } else if (ev.event === 'escort-hint') {
+        this.cb.onSystem(ev.msg);
+      }
+    }
+
+    const streak = this.rings.update(bikePos, this.lateral);
+    if (streak && this.started) {
+      rideAudio.play('chime');
+      this.cb.onSystem(streak >= 3 ? '三连。风从圈里穿过去了。' : '穿过去了。');
     }
 
     this.updateCamera(dt, bikePos);
@@ -443,6 +521,13 @@ export class RideEngine {
           stampIndex: this.seen.size,
         });
       }
+      if (this.started && this.photoHintCd <= 0) {
+        const hint = this.photoQuestHint(bikePos);
+        if (hint) {
+          this.cb.onSystem(hint);
+          this.photoHintCd = 22;
+        }
+      }
       this.cb.onStats({
         speed: this.speed,
         dist: this.dist,
@@ -454,6 +539,7 @@ export class RideEngine {
         x: bikePos.x,
         z: bikePos.z,
         yaw: Math.atan2(pose.tan.x, pose.tan.z),
+        speedCap: this.vehicle.sprint,
       });
     }
 

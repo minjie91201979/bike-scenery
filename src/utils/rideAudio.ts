@@ -1,6 +1,6 @@
 import { duckMusic } from '../music';
 /** Quiet procedural WebAudio cues for scenery ride. Unlock on first gesture. */
-type Cue = 'discover' | 'shutter' | 'warn';
+type Cue = 'discover' | 'shutter' | 'warn' | 'chime';
 
 class RideAudio {
   private ctx: AudioContext | null = null;
@@ -82,6 +82,11 @@ class RideAudio {
     if (cue === 'shutter') {
       this.noiseBurst(t0, 0.045, 0.12);
       this.tone(880, t0, 0.06, 0.05, 'square');
+      return;
+    }
+    if (cue === 'chime') {
+      this.tone(392, t0, 0.22, 0.05, 'sine');
+      this.tone(523.25, t0 + 0.08, 0.28, 0.04, 'sine');
       return;
     }
     // soft warn

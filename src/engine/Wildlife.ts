@@ -7,10 +7,13 @@ import type { World } from './World';
  *  攻击性物种在视野内近距离会追骑手；撞击只减速不结束骑行
  * ============================================================ */
 
+export type WildlifeEvent = 'hit' | 'dodge' | 'escort-hint' | 'escort-ok';
+
 export interface AnimalHit {
   kind: AnimalKind;
   knock: number;
   msg: string;
+  event: WildlifeEvent;
 }
 
 type AnimalKind =
@@ -477,7 +480,7 @@ function buildBeast(kind: AnimalKind): BeastMesh {
   }
 }
 
-type AIState = 'wander' | 'chase' | 'flee' | 'idle';
+type AIState = 'wander' | 'chase' | 'flee' | 'idle' | 'wait' | 'cross';
 
 interface Animal {
   kind: AnimalKind;
@@ -499,6 +502,13 @@ interface Animal {
   side: number;
   latOff: number;
   hitCD: number;
+  escort: boolean;
+  escortDone: boolean;
+  hintSent: boolean;
+  dodgeSent: boolean;
+  crossT: number;
+  waitX: number;
+  waitZ: number;
 }
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -521,9 +531,8 @@ function pickEntry(entries: FaunaEntry[], seed: number): FaunaEntry {
 
 function hitMsg(kind: AnimalKind): string {
   const s = SPECIES[kind];
-  if (s.temper !== 'aggro') return `被${s.label}撞到了`;
-  if (kind === 'elephant') return '象群开始冲锋！';
-  return `${s.label}扑过来了！`;
+  if (s.temper !== 'aggro') return `被${s.label}撞到了。它只是想打个招呼。`;
+  return `${s.label}擦身而过。它只是想打个招呼。`;
 }
 
 export class Wildlife {
@@ -564,6 +573,13 @@ export class Wildlife {
       side: rand(seed + 0.19) < 0.5 ? -1 : 1,
       latOff: 3.8 + rand(seed + 0.51) * 2.8,
       hitCD: 0,
+      escort: spec.temper !== 'aggro' && rand(seed + 0.61) < 0.16,
+      escortDone: false,
+      hintSent: false,
+      dodgeSent: false,
+      crossT: 0,
+      waitX: x,
+      waitZ: z,
     });
   }
 
@@ -604,8 +620,8 @@ export class Wildlife {
   }
 
   /**
-   * 更新可见动物。掠食者只从侧后方跟随，不超车挡路。
-   * 有撞击时返回一次命中（调用方负责无敌帧）。
+   * 更新可见动物。掠食者侧后方跟随；换道躲开记一次 dodge，撞上记 hit。
+   * 温顺的动物偶发「过马路」：停下等它过去。
    */
   update(
     dt: number,
@@ -613,6 +629,7 @@ export class Wildlife {
     playerRight: THREE.Vector3,
     playerFwd: THREE.Vector3,
     playerSpeed: number,
+    playerLateral: number,
   ): AnimalHit | null {
     this.tmpHit = null;
     const px = player.x, pz = player.z;
@@ -643,7 +660,47 @@ export class Wildlife {
       const spec = a.spec;
       const inSight = dist < spec.sight && (see > 0.18 || dist < spec.sight * 0.42);
 
-      if (spec.temper === 'aggro' && inSight && along < 2.5) {
+      if (a.escort && !a.escortDone) {
+        if (a.state === 'cross') {
+          a.crossT -= dt;
+          const cdx = a.waitX - a.x;
+          const cdz = a.waitZ - a.z;
+          if (cdx * cdx + cdz * cdz < 1.4 || a.crossT <= 0) {
+            a.escortDone = true;
+            a.state = 'wander';
+            a.homeX = a.x;
+            a.homeZ = a.z;
+            if (!this.tmpHit) {
+              this.tmpHit = {
+                kind: a.kind, knock: 0, event: 'escort-ok',
+                msg: `${spec.label}过去了。路上见。`,
+              };
+            }
+          }
+        } else if (a.state === 'wait') {
+          if (playerSpeed < 0.18 && dist < 13) {
+            a.state = 'cross';
+            a.crossT = 3.2;
+            a.side = -a.side;
+            a.waitX = a.x + rx * a.side * 9;
+            a.waitZ = a.z + rz * a.side * 9;
+          } else if (along < -4 && playerSpeed > 3) {
+            a.state = 'flee';
+            a.escortDone = true;
+          }
+        } else if (along > 7 && along < 22 && dist < 20) {
+          a.state = 'wait';
+          a.waitX = px + fx * 9 + rx * a.side * 4.4;
+          a.waitZ = pz + fz * 9 + rz * a.side * 4.4;
+          if (!a.hintSent && !this.tmpHit) {
+            a.hintSent = true;
+            this.tmpHit = {
+              kind: a.kind, knock: 0, event: 'escort-hint',
+              msg: `${spec.label}想过马路。停一下就好。`,
+            };
+          }
+        }
+      } else if (spec.temper === 'aggro' && inSight && along < 2.5) {
         a.state = 'chase';
       } else if (spec.temper === 'flee' && dist < spec.sight) {
         a.state = 'flee';
@@ -653,11 +710,21 @@ export class Wildlife {
         a.state = 'wander';
       }
 
+      if (a.state !== 'chase') a.dodgeSent = false;
+
       a.idleT -= dt;
       let spd = spec.speed;
       let wantYaw = a.yaw;
 
-      if (a.state === 'chase') {
+      if (a.state === 'wait') {
+        const wx = a.waitX - a.x, wz = a.waitZ - a.z;
+        wantYaw = Math.atan2(wx, wz);
+        spd = wx * wx + wz * wz < 0.7 ? 0 : spec.speed * 0.65;
+      } else if (a.state === 'cross') {
+        const wx = a.waitX - a.x, wz = a.waitZ - a.z;
+        wantYaw = Math.atan2(wx, wz);
+        spd = spec.speed * 1.15;
+      } else if (a.state === 'chase') {
         const back = 6.4;
         const tx = px - fx * back + rx * a.latOff * a.side;
         const tz = pz - fz * back + rz * a.latOff * a.side;
@@ -693,7 +760,7 @@ export class Wildlife {
         }
       }
 
-      const turn = a.state === 'chase' ? 2.6 : 1.8;
+      const turn = a.state === 'chase' || a.state === 'cross' ? 2.6 : 1.8;
       a.yaw = lerpAngle(a.yaw, wantYaw, 1 - Math.pow(0.001, dt * turn));
 
       if (spd > 0.05) {
@@ -728,14 +795,36 @@ export class Wildlife {
       }
       if (a.trunk) a.trunk.rotation.x = 0.25 + Math.sin(a.phase * 0.7) * 0.18;
 
-      if (
-        a.state === 'chase' && a.hitCD <= 0 && along < -1.2
-        && dist < spec.hitR * spec.scale + 1.0 && !this.tmpHit
-      ) {
-        this.tmpHit = { kind: a.kind, knock: 0, msg: hitMsg(a.kind) };
-        a.hitCD = 7;
+      if (spec.temper === 'aggro' && a.state === 'chase' && a.hitCD <= 0 && !this.tmpHit) {
+        const away = (a.side > 0 && playerLateral < -0.75) || (a.side < 0 && playerLateral > 0.75);
+        if (along < -1.2 && dist < spec.hitR * spec.scale + 1.05 && !away) {
+          this.tmpHit = { kind: a.kind, knock: 1.6, event: 'hit', msg: hitMsg(a.kind) };
+          a.hitCD = 7;
+          a.dodgeSent = true;
+        } else if (!a.dodgeSent && away && along < -1.4 && dist < 9) {
+          this.tmpHit = {
+            kind: a.kind, knock: 0, event: 'dodge',
+            msg: `${spec.label}从身边擦过去了。`,
+          };
+          a.dodgeSent = true;
+          a.hitCD = 4;
+        }
       }
     }
     return this.tmpHit;
+  }
+
+  /** 拍照课题：最近的可见动物 */
+  nearest(player: THREE.Vector3): { dist: number; label: string } | null {
+    let best: { dist: number; label: string } | null = null;
+    const px = player.x, pz = player.z;
+    for (let i = 0; i < this.animals.length; i++) {
+      const a = this.animals[i];
+      if (!a.root.visible) continue;
+      const dx = px - a.x, dz = pz - a.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (!best || d < best.dist) best = { dist: d, label: a.spec.label };
+    }
+    return best;
   }
 }

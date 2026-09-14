@@ -15,7 +15,7 @@ import { rideAudio } from './utils/rideAudio';
 
 const INITIAL_STATS: Stats = {
   speed: 0, dist: 0, time: 0, seen: 0, total: 6,
-  poi: null, poiDist: Infinity, x: 0, z: 0, yaw: 0,
+  poi: null, poiDist: Infinity, x: 0, z: 0, yaw: 0, speedCap: 16.8,
 };
 
 type Phase = 'globe' | 'character' | 'ride';

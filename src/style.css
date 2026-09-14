@@ -131,7 +131,8 @@ body.riding canvas.scene { touch-action: none; }
     radial-gradient(120% 90% at 20% 100%, rgba(78, 168, 255, .22), transparent 60%);
 }
 #start-inner {
-  position: relative; z-index: 2; max-width: 640px; padding: 0 40px;
+  position: relative; z-index: 2; max-width: 640px; padding: 24px 40px;
+  max-height: 100%; overflow-y: auto;
   animation: rise .8s cubic-bezier(.22, 1, .36, 1) both;
 }
 @keyframes rise {
@@ -178,7 +179,7 @@ body.riding canvas.scene { touch-action: none; }
   color: var(--accent-2); margin-bottom: 10px; text-transform: uppercase;
 }
 .select-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px;
 }
 .select-card {
   pointer-events: auto; text-align: left; cursor: pointer; font-family: var(--font);
@@ -205,7 +206,7 @@ body.riding canvas.scene { touch-action: none; }
 .pick-summary b { color: var(--accent-2); font-weight: 700; }
 
 @media (max-width: 760px) {
-  .select-grid { grid-template-columns: 1fr; }
+  .select-grid { grid-template-columns: 1fr 1fr; }
   #start-inner { max-width: 100%; }
 }
 
@@ -453,7 +454,7 @@ body.riding canvas.scene { touch-action: none; }
   #start-inner { padding: 0 18px; max-width: 100%; }
   #start h1 { font-size: 32px; }
   #start .sub { font-size: 13.5px; }
-  .select-grid { grid-template-columns: 1fr; }
+  .select-grid { grid-template-columns: 1fr 1fr; }
   .select-card { padding: 14px; min-height: 48px; }
   .keycaps { display: none; }
   #btn-start { min-height: 48px; padding: 15px 28px; width: 100%; max-width: 280px; }
@@ -607,6 +608,36 @@ body.riding canvas.scene { touch-action: none; }
   transition: opacity .12s ease-out;
 }
 .shutter-flash.on { opacity: 0.72; }
+
+.photo-save-sheet {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 18px;
+  background: rgba(6, 10, 18, 0.72);
+  pointer-events: auto;
+}
+.photo-save-sheet__card {
+  width: min(420px, 100%);
+  padding: 16px 16px 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.photo-save-sheet__hint {
+  margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; text-align: center;
+}
+.photo-save-sheet__img {
+  display: block; width: 100%; max-height: 52vh; object-fit: contain;
+  border-radius: 10px; background: #0b1220;
+  -webkit-touch-callout: default;
+  pointer-events: auto;
+}
+.photo-save-sheet__row {
+  display: flex; gap: 8px; justify-content: center;
+}
+.photo-save-sheet__save {
+  color: #06121f;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+}
+.photo-save-sheet__close { color: var(--text); }
 /* ---------- 旅途伴听（安静伴侣，非炫技播放器） ---------- */
 .music-dock {
   position: absolute;

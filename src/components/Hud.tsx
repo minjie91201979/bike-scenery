@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CamMode, Stats, TimeOfDay } from '../engine/types';
-import { SPEED_BAR_MAX_KMH } from '../engine/constants';
 import { Minimap } from './Minimap';
 import type { World } from '../engine/World';
 import { isTouchUi, subscribeTouchUi } from '../utils/touchUi';
@@ -83,7 +82,7 @@ export function Hud({
         <div id="speed-bar">
           <div
             id="speed-fill"
-            style={{ width: `${Math.min(100, (kmh / SPEED_BAR_MAX_KMH) * 100)}%` }}
+            style={{ width: `${Math.min(100, (kmh / Math.max(1, stats.speedCap * 3.6)) * 100)}%` }}
           />
         </div>
         <div className="stats">
@@ -240,11 +239,11 @@ export function Hud({
       <div id="help" className={`panel${helpVisible && !(touchUi && !menuOpen) ? '' : ' hidden'}`}>
         <div className="title">操作指南</div>
         <div><span className="k">W</span><span className="k">↑</span> 加速 · <span className="k">S</span><span className="k">↓</span> 刹车停住</div>
-        <div><span className="k">A</span><span className="k">D</span> 左右换道</div>
-        <div><span className="k">C</span> 切换视角 · <span className="k">F</span> 拍照</div>
+        <div><span className="k">A</span><span className="k">D</span> 左右换道 · 躲开追来的动物 / 穿过路边光环</div>
+        <div><span className="k">C</span> 切换视角 · <span className="k">F</span> 拍照（靠近气球、动物、景点时按）</div>
         <div><span className="k">H</span> 隐藏提示 · <span className="k">1</span><span className="k">2</span><span className="k">3</span> 时段</div>
         <div><span className="k">Esc</span> 返回地球切换场景</div>
-        <div style={{ marginTop: 6, opacity: 0.75 }}>松开油门可轻巡航；刹车可完全停住看风景</div>
+        <div style={{ marginTop: 6, opacity: 0.75 }}>松开油门可轻巡航；刹车可完全停住，让路旁的动物过马路</div>
       </div>
     </div>
   );
