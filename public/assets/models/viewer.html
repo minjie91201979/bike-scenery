@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>3D Shop Models</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0f1424;color:#e6ecff}
+header{padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #2a3458}
+select{background:#1a2138;color:#e6ecff;border:1px solid #2a3458;border-radius:8px;padding:7px 12px;font-size:14px}
+model-viewer{width:100vw;height:calc(100vh - 60px);background:#f0f0f0}
+.info{padding:8px 16px;font-size:12px;color:#8a9ab0}
+</style></head>
+<body>
+<header><b>🏪 各国店铺 3D 模型</b><select id="sel"></select></header>
+<div class="info" id="info"></div>
+<moxi id="mv" camera-controls auto-rotate shadow-intensity="1"></model-viewer>
+<script>
+const models=[  {src:"cn_shop.glb", name:"China Tea"},
+  {src:"fr_shop.glb", name:"France Cafe"},
+  {src:"gb_shop.glb", name:"UK Pub"},
+  {src:"gr_shop.glb", name:"Greece Taverna"},
+  {src:"in_shop.glb", name:"India Spice"},
+  {src:"it_shop.glb", name:"Italy Gelato"},
+  {src:"jp_shop.glb", name:"Japan Ramen"},
+  {src:"ma_shop.glb", name:"Morocco Shop"},
+  {src:"mx_shop.glb", name:"Mexico Market"},
+  {src:"nl_shop.glb", name:"Netherlands Cheese"},
+  {src:"th_shop.glb", name:"Thailand Street"},
+  {src:"us_shop.glb", name:"USA Diner"},];
+const sel=document.getElementById('sel');
+models.forEach(m=>{const o=document.createElement('option');o.value=m.src;o.textContent=m.name;sel.appendChild(o);});
+const mv=document.getElementById('mv');
+function load(){mv.setAttribute('src','./'+sel.value);document.getElementById('info').textContent='📐 '+sel.value;}
+sel.onchange=load;load();
+</script></body></html>

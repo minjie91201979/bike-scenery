@@ -23,6 +23,8 @@ export interface CurveParams {
   heightSeedX: number;
   heightSeedZ: number;
   heightBias: number;
+  /** 沿路明确坡段数量；不填则按环长估算 */
+  hillCount?: number;
   /** 椭圆拉伸 X，默认 1（正圆环线） */
   scaleX?: number;
   /** 椭圆拉伸 Z，默认 1 */

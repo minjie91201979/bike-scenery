@@ -1,0 +1,13 @@
+=== 提交阶段 ===
+ERR [INFO] Starting 3d generation...
+[INFO] Submitting generation request...
+
+  ✗ mx 提交失败
+ERR [INFO] Starting 3d generation...
+[INFO] Submitting generation request...
+
+  ✗ cn 提交失败
+
+=== 并发轮询 + 下载阶段 ===
+
+ALL DONE -> C:/Users/minji/Desktop/object/bike-scenery/public/assets/models | 本批成功: [] | 目录内模型: ['fr', 'jp']

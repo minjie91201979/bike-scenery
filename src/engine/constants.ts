@@ -12,6 +12,8 @@ export const REST_EPS = 0.12;
 /** HUD 速度条上限（km/h），对齐自行车 SPRINT * 3.6 ≈ 60.5；座驾以 Stats.speedCap 为准 */
 export const SPEED_BAR_MAX_KMH = Math.round(SPRINT * 3.6);
 export const MAX_LAT = 2.6;   // 自行车最大横向偏移 m
+/** 坡度重力感：乘 tan.y 得到纵向加减速度，让上坡吃力、下坡溜出去 */
+export const GRADE_ACCEL = 8.4;
 
 /** 座驾手感与相机（数值外置，避免写进主循环） */
 export interface VehicleProfile {

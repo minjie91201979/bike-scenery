@@ -418,6 +418,10 @@ export class Scatter {
         if (ddx * ddx + ddz * ddz < (poi.radius + 3) ** 2) return null;
       }
       if (w.coastLeft && lat < w.coastEdge(k) + 2.2) return null;
+      for (const sh of w.shops) {
+        const sdx = x - sh.x, sdz = z - sh.z;
+        if (sdx * sdx + sdz * sdz < sh.r * sh.r) return null;
+      }
       return { x, y: w.groundY(k, lat), z };
     };
 
@@ -3880,9 +3884,12 @@ export function buildPois(scene: THREE.Scene, world: World): Animatable[] {
   const animatables: Animatable[] = [];
 
   for (const poi of world.pois) {
+    const hint = Math.round(poi.t * world.sampleCount) % world.sampleCount;
+    const planted = world.surfaceY(poi.pos.x, poi.pos.z, hint).y - 0.18;
+    poi.pos.y = planted;
     const g = new THREE.Group();
-    g.position.copy(poi.pos);
-    g.lookAt(poi.roadPos.x, poi.pos.y, poi.roadPos.z);
+    g.position.set(poi.pos.x, planted, poi.pos.z);
+    g.lookAt(poi.roadPos.x, planted, poi.roadPos.z);
     scene.add(g);
 
     // 地标主体：有 landmark 则建简模，否则走通用风车/观景台/灯塔

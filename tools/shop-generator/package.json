@@ -1,0 +1,14 @@
+{
+  "name": "shop-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "按国家参数化批量生成统一卡通风格的特色店铺游戏素材（Agnes Image 2.0 Flash）",
+  "scripts": {
+    "list": "node generate-shops.mjs --list",
+    "gen": "node generate-shops.mjs",
+    "gen:all": "node generate-shops.mjs --all",
+    "gen:dry": "node generate-shops.mjs --all --dry-run",
+    "gallery": "node make-gallery.mjs"
+  }
+}

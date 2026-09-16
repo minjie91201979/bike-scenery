@@ -8,7 +8,8 @@ import { SkyBirds } from './Birds';
 import { CoastBoats } from './CoastBoats';
 import { SkyBalloons } from './Balloons';
 import { WindRings } from './WindRings';
-import { BRAKE_MIN, REST_EPS, vehicleProfile, type VehicleProfile } from './constants';
+import { RoadShops } from './RoadShops';
+import { BRAKE_MIN, GRADE_ACCEL, REST_EPS, vehicleProfile, type VehicleProfile } from './constants';
 import { getScene, type CharacterId, type RideConfig } from './scenes';
 import type { CamMode, Stats, TimeOfDay } from './types';
 import { greeterWelcomeMessage } from './ethnic';
@@ -65,6 +66,7 @@ export class RideEngine {
   private boats: CoastBoats;
   private balloons: SkyBalloons;
   private rings: WindRings;
+  private shops: RoadShops;
   private poiAnims: Animatable[] = [];
   private bike: Bike;
   private vehicle: VehicleProfile;
@@ -131,6 +133,7 @@ export class RideEngine {
     this.boats = new CoastBoats(this.scene, this.world);
     this.balloons = new SkyBalloons(this.scene, this.world);
     this.rings = new WindRings(this.scene, this.world);
+    this.shops = new RoadShops(this.scene, this.world);
     this.poiAnims = buildPois(this.scene, this.world);
 
     this.bike = new Bike(characterId);
@@ -430,6 +433,12 @@ export class RideEngine {
         this.speed += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
         if (down && this.speed < REST_EPS) this.speed = 0;
       }
+      if (!down && this.speed > REST_EPS) {
+        const grade = this.world.gradeAt(this.s);
+        this.speed += -grade * GRADE_ACCEL * dt;
+        const floor = up ? veh.cruise * 0.45 : 2.05;
+        this.speed = Math.max(floor, Math.min(veh.sprint * 1.16, this.speed));
+      }
 
       if (this.keys.has('KeyA') || this.keys.has('ArrowLeft') || this.touch.left) this.latTarget = Math.max(-veh.maxLat, this.latTarget - 5.5 * dt);
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight') || this.touch.right) this.latTarget = Math.min(veh.maxLat, this.latTarget + 5.5 * dt);
@@ -472,6 +481,7 @@ export class RideEngine {
     this.birds.update(dt, bikePos);
     this.boats.update(dt, bikePos, t);
     this.balloons.update(dt, bikePos, t, this.sky.night);
+    this.shops.update(bikePos);
 
     const ev = this.wildlife.update(dt, bikePos, pose.right, pose.tan, this.speed, this.lateral);
     if (ev && this.started) {

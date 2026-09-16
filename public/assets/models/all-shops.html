@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>各国店铺 3D + 2D 资产库</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(135deg, #0f1424 0%, #1a2138 100%);
+  color: #e6ecff;
+  min-height: 100vh;
+}
+header {
+  padding: 20px 24px;
+  background: rgba(26, 33, 56, 0.8);
+  border-bottom: 1px solid #2a3458;
+  text-align: center;
+}
+header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+header p {
+  font-size: 14px;
+  color: #8a9ab0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  padding: 24px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+.card {
+  background: rgba(26, 33, 56, 0.6);
+  border: 1px solid #2a3458;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.card-header {
+  padding: 12px 16px;
+  background: rgba(42, 52, 88, 0.5);
+  border-bottom: 1px solid #2a3458;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.country-name {
+  font-weight: 600;
+  font-size: 16px;
+  color: #ffd166;
+}
+.country-en {
+  font-size: 12px;
+  color: #8a9ab0;
+}
+.card-preview {
+  width: 100%;
+  height: 280px;
+  background: #f0f0f0;
+}
+model-viewer {
+  width: 100%;
+  height: 100%;
+}
+.card-2d {
+  padding: 12px;
+  background: rgba(15, 20, 36, 0.5);
+  border-top: 1px solid #2a3458;
+}
+.card-2d img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+.stats {
+  text-align: center;
+  padding: 12px;
+  font-size: 13px;
+  color: #8a9ab0;
+  background: rgba(26, 33, 56, 0.5);
+  border-bottom: 1px solid #2a3458;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏪 各国特色店铺 3D + 2D 资产库</h1>
+  <p>Faceted Low-Poly GLB 模型 · 本地生成 · 零外部依赖</p>
+</header>
+<div class="stats">共 12 国店铺资产 · GLB 均小于 8KB · 可直接导入游戏引擎</div>
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">法国咖啡馆</span>
+      <span class="country-en">France Cafe</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./fr_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="法国咖啡馆 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/fr_french_cafe.png" alt="法国咖啡馆 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">日本拉面店</span>
+      <span class="country-en">Japan Ramen</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./jp_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="日本拉面店 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/jp_japanese_ramen_shop.png" alt="日本拉面店 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">墨西哥集市</span>
+      <span class="country-en">Mexico Market</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./mx_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="墨西哥集市 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/mx_mexican_market.png" alt="墨西哥集市 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">中国茶馆</span>
+      <span class="country-en">China Tea</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./cn_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="中国茶馆 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/cn_chinese_tea_house.png" alt="中国茶馆 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">意大利冰淇淋店</span>
+      <span class="country-en">Italy Gelato</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./it_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="意大利冰淇淋店 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/it_italian_gelateria.png" alt="意大利冰淇淋店 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">英国酒吧</span>
+      <span class="country-en">UK Pub</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./gb_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="英国酒吧 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/gb_english_pub.png" alt="英国酒吧 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">美国复古餐厅</span>
+      <span class="country-en">USA Diner</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./us_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="美国复古餐厅 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/us_american_diner.png" alt="美国复古餐厅 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">荷兰奶酪店</span>
+      <span class="country-en">Netherlands Cheese</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./nl_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="荷兰奶酪店 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/nl_dutch_cheese_shop.png" alt="荷兰奶酪店 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">希腊小酒馆</span>
+      <span class="country-en">Greece Taverna</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./gr_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="希腊小酒馆 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/gr_greek_taverna.png" alt="希腊小酒馆 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">印度香料店</span>
+      <span class="country-en">India Spice</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./in_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="印度香料店 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/in_indian_spice_shop.png" alt="印度香料店 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">摩洛哥手作店</span>
+      <span class="country-en">Morocco Shop</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./ma_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="摩洛哥手作店 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/ma_moroccan_shop.png" alt="摩洛哥手作店 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="country-name">泰国街头小吃</span>
+      <span class="country-en">Thailand Street</span>
+    </div>
+    <div class="card-preview">
+      <model-viewer src="./th_shop.glb" auto-rotate camera-controls shadow-intensity="1" background-color="#f0f0f0" alt="泰国街头小吃 3D 模型"></model-viewer>
+    </div>
+    <div class="card-2d">
+      <img src="../../tools/shop-generator/output/th_thai_street_food.png" alt="泰国街头小吃 2D" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

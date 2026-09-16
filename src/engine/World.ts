@@ -44,6 +44,13 @@ export const smoothstep = (a: number, b: number, x: number): number => {
 
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
+/** 闭环上 a→b 的最短有向弧长 */
+function wrapDelta(a: number, b: number, len: number): number {
+  let d = a - b;
+  d -= Math.round(d / len) * len;
+  return d;
+}
+
 /* ============================================================
  *  地形走廊尺寸
  * ============================================================ */
@@ -83,6 +90,8 @@ export class World {
   rights: THREE.Vector3[] = [];
   pois: Poi[] = [];
   lakes: Lake[] = [];
+  /** 路边店铺占位，散点避开 */
+  shops: { x: number; z: number; r: number }[] = [];
   readonly packId: string;
   readonly coastLeft: boolean;
   private curveParams: CurveParams;
@@ -166,7 +175,7 @@ export class World {
     const pts = raw.slice(0, this.sampleCount);
 
     for (const p of pts) p.y = this.roadHeight(p.x, p.z);
-    // 多轮移动平均，消除过陡的坡
+    // 多轮移动平均，先把噪声铺成缓丘，再叠明确的上下坡段
     for (let pass = 0; pass < 6; pass++) {
       const prev = pts.map((p) => p.y);
       for (let i = 0; i < pts.length; i++) {
@@ -176,6 +185,7 @@ export class World {
         pts[i].y = a * 0.25 + b * 0.5 + c * 0.25;
       }
     }
+    this.applyRoadHills(pts);
 
     const UP = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < pts.length; i++) {
@@ -188,6 +198,45 @@ export class World {
     this.samples = pts;
   }
 
+  /**
+   * 在平滑底丘上叠几段可骑的上下坡。余弦包络保证坡顶/坡底导数为 0，不在接头处折一道棱。
+   */
+  private applyRoadHills(pts: THREE.Vector3[]): void {
+    const n = pts.length;
+    const len = this.length;
+    const c = this.curveParams;
+    const want = c.hillCount ?? Math.max(5, Math.round(len / 400));
+    const minGap = 96;
+    const centers: number[] = [];
+    let placed = 0;
+    let guard = 0;
+    while (placed < want && guard < want * 8) {
+      const seed = placed * 19.7 + guard * 3.1 + c.seedOffset1 * 0.17 + c.heightSeedX;
+      guard++;
+      const s = (0.08 + rand(seed) * 0.84) * len;
+      let clash = false;
+      for (let i = 0; i < centers.length; i++) {
+        if (Math.abs(wrapDelta(s, centers[i], len)) < minGap) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      centers.push(s);
+      const valley = rand(seed + 0.41) < 0.44;
+      const scale = Math.min(1.15, Math.max(0.75, c.heightScale / 30));
+      const amp = (valley ? -1 : 1) * (6.6 + rand(seed + 0.72) * 4.4) * scale;
+      const half = 50 + rand(seed + 1.13) * 30;
+      for (let i = 0; i < n; i++) {
+        const d = Math.abs(wrapDelta(i * this.segLen, s, len));
+        if (d >= half) continue;
+        const w = 0.5 * (1 + Math.cos(Math.PI * (d / half)));
+        pts[i].y += amp * w;
+      }
+      placed++;
+    }
+  }
+
   /** 把 POI 定义解析成世界坐标 */
   private resolvePois(defs: PoiDef[]): void {
     this.pois = defs.map((def, i) => {
@@ -195,7 +244,8 @@ export class World {
       const off = (def.side || 1) * (def.dist || 26);
       const x = pose.pos.x + pose.right.x * off;
       const z = pose.pos.z + pose.right.z * off;
-      const y = this.rawHeight(x, z) - 0.25;
+      // 贴走廊可见地表，避免坡段上用 rawHeight 导致地标悬空或陷入
+      const y = this.surfaceY(x, z, pose.index).y - 0.18;
       const poi: Poi = {
         ...def,
         id: i + 1,
@@ -228,6 +278,17 @@ export class World {
       index: i,
       frac: f,
     };
+  }
+
+  /** 当前弧长处的坡度（切线 y，上坡为正）。主循环用，不分配对象。 */
+  gradeAt(s: number): number {
+    const n = this.sampleCount;
+    let u = (s / this.segLen) % n;
+    if (u < 0) u += n;
+    const i = Math.floor(u);
+    const f = u - i;
+    const j = (i + 1) % n;
+    return this.tangents[i].y * (1 - f) + this.tangents[j].y * f;
   }
 
   /* ---------- 高度场 ---------- */
